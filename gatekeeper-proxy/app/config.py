@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Dev login bypass (only works when dev_mode=True)
     dev_login_enabled: bool = True
 
+    # Redis (sessions)
+    redis_url: str = "redis://localhost:6379/0"
+
     model_config = {"env_prefix": "GK_"}
 
 

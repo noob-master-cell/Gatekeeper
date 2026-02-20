@@ -98,7 +98,7 @@ zti/
 | **Phase 0** | Repo skeleton, tooling, CI | ✅ Complete |
 | **Phase 1** | Core proxy engine | ✅ Complete |
 | **Phase 2** | Identity layer (OAuth + JWT) | ✅ Complete |
-| **Phase 3** | Policy engine (Redis + RBAC) | ⬜ Not started |
+| **Phase 3** | Policy engine (Redis + RBAC) | ✅ Complete |
 | **Phase 4** | Zero-trust networking + observability | ⬜ Not started |
 | **Phase 5** | Admin dashboard (React) | ⬜ Not started |
 
@@ -208,6 +208,47 @@ curl -b cookies.txt http://localhost:8000/auth/me
 
 # Logout
 curl -b cookies.txt http://localhost:8000/auth/logout -L
+```
+
+---
+
+## ✅ Phase 3 — Policy Engine (Done)
+
+Route-level RBAC, Redis session management, PostgreSQL user/role models.
+
+### RBAC Policy Map
+
+| Route Pattern | Required Roles | Action on Mismatch |
+|--------------|----------------|-------------------|
+| `/api/admin/*` | `admin` | 403 Forbidden |
+| `/admin/*` | `admin` | 403 Forbidden |
+| `/api/hr/*` | `hr`, `admin` | 403 Forbidden |
+| `/*` (default) | Any authenticated | 401 Unauthorized |
+
+### Features
+
+- **Redis sessions** — `session:{jti}` with TTL, per-user tracking via `user_sessions:{user_id}`
+- **Session revocation** — Single session (`jti`) or all user sessions
+- **Fail-closed** — Redis down → 503 (no silent auth bypass)
+- **RBAC enforcement** — Middleware checks role intersection against policy map
+- **PostgreSQL models** — `users`, `roles`, `user_roles` M2M with Alembic migrations
+- **Admin APIs** — User CRUD, role assignment, session list/revoke
+
+### Example `curl` Commands (RBAC)
+
+```bash
+# Get session list (admin only)
+curl -b cookies.txt http://localhost:8000/admin/sessions
+
+# Revoke a session
+curl -X POST http://localhost:8000/admin/sessions/revoke \
+  -H 'Content-Type: application/json' \
+  -b cookies.txt -d '{"jti": "abc-123"}'
+
+# Revoke all sessions for a user
+curl -X POST http://localhost:8000/admin/sessions/revoke \
+  -H 'Content-Type: application/json' \
+  -b cookies.txt -d '{"user_id": "user-456"}'
 ```
 
 ---

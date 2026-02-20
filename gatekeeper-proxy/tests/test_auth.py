@@ -173,7 +173,7 @@ async def test_protected_route_requires_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_protected_route_with_valid_bearer_token(client: AsyncClient):
     """Protected routes should accept valid Bearer token."""
-    token = create_access_token(user_id="test-user", email="test@example.com", roles=["user"])
+    token = create_access_token(user_id="test-user", email="test@example.com", roles=["hr"])
 
     response = await client.get(
         "/api/hr/employees",
@@ -186,7 +186,7 @@ async def test_protected_route_with_valid_bearer_token(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_protected_route_with_valid_cookie(client: AsyncClient):
     """Protected routes should accept valid cookie token."""
-    token = create_access_token(user_id="test-user", email="test@example.com", roles=["user"])
+    token = create_access_token(user_id="test-user", email="test@example.com", roles=["hr"])
 
     response = await client.get(
         "/api/hr/employees",

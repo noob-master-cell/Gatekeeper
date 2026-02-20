@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 
 from app.auth.keys import get_jwks, initialize_keys
 from app.auth.oauth import router as auth_router
+from app.auth.sessions import close_redis, init_redis
+from app.config import settings
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.middleware.logging import RequestLoggingMiddleware
@@ -42,11 +44,22 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle — startup and shutdown."""
     logger.info("proxy.starting", message="Gatekeeper Proxy is starting")
+
     # Initialize RSA keys for JWT signing
     initialize_keys()
     logger.info("proxy.keys_initialized", message="RSA keys ready")
+
+    # Initialize Redis for sessions
+    if settings.redis_url:
+        try:
+            await init_redis(settings.redis_url)
+        except Exception as exc:
+            logger.warning("proxy.redis_init_failed", error=str(exc))
+
     yield
-    logger.info("proxy.shutting_down", message="Closing HTTP client pool")
+
+    logger.info("proxy.shutting_down", message="Closing connections")
+    await close_redis()
     await close_client()
 
 
@@ -55,14 +68,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="Gatekeeper Proxy",
     description="Zero-trust reverse proxy with authentication, RBAC, and audit logging.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
 # Add middleware (order matters: outermost middleware runs first)
 # 1. Correlation ID (outermost — every request gets an ID)
 # 2. Logging (logs every request with correlation ID)
-# 3. Auth (enforces JWT — must run after correlation ID is set)
+# 3. Auth (enforces JWT + Redis sessions + RBAC)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
@@ -80,7 +93,7 @@ async def proxy_health() -> dict:
     return {
         "status": "ok",
         "service": "gatekeeper-proxy",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
@@ -92,6 +105,46 @@ async def proxy_health() -> dict:
 async def jwks_endpoint() -> JSONResponse:
     """Expose public keys for JWT verification (JWKS format)."""
     return JSONResponse(content=get_jwks())
+
+
+# ─── Admin session management (proxy-side) ────────────────────
+
+
+@app.get("/admin/sessions")
+async def list_sessions(request: Request) -> JSONResponse:
+    """List all active sessions from Redis."""
+    from app.auth.sessions import list_active_sessions
+
+    try:
+        sessions = await list_active_sessions()
+    except RuntimeError:
+        return JSONResponse(content={"data": [], "count": 0, "note": "Redis not initialized"})
+    return JSONResponse(content={"data": sessions, "count": len(sessions)})
+
+
+@app.post("/admin/sessions/revoke")
+async def revoke_session_endpoint(request: Request) -> JSONResponse:
+    """Revoke a session by JTI or all sessions for a user."""
+    from app.auth.sessions import revoke_all_user_sessions, revoke_session
+
+    body = await request.json()
+    jti = body.get("jti")
+    user_id = body.get("user_id")
+
+    if jti:
+        success = await revoke_session(jti)
+        return JSONResponse(
+            content={"revoked": success, "jti": jti},
+            status_code=200 if success else 404,
+        )
+    elif user_id:
+        count = await revoke_all_user_sessions(user_id)
+        return JSONResponse(content={"revoked_count": count, "user_id": user_id})
+    else:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Provide either 'jti' or 'user_id' to revoke"},
+        )
 
 
 # ─── Catch-all reverse proxy route ───────────────────────────

@@ -140,7 +140,7 @@ async def test_proxy_forward_returns_502_when_backend_down(client: AsyncClient):
     from app.auth.tokens import create_access_token
 
     initialize_keys()
-    token = create_access_token(user_id="test", email="test@test.com")
+    token = create_access_token(user_id="test", email="test@test.com", roles=["hr"])
 
     # The backend isn't running in test mode, so forwarding should fail
     response = await client.get(

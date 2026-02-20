@@ -1,4 +1,13 @@
-"""Authentication middleware — enforces JWT auth on protected routes."""
+"""Authentication middleware — enforces JWT auth + Redis sessions + RBAC.
+
+Flow:
+1. Skip auth for public routes
+2. Extract JWT from cookie or Bearer header
+3. Verify JWT signature and expiration
+4. Check Redis session (revocation check)
+5. Check RBAC permissions for the route
+6. Attach current_user to request state
+"""
 
 from __future__ import annotations
 
@@ -8,7 +17,10 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.auth.rbac import check_route_access
+from app.auth.sessions import get_session
 from app.auth.tokens import verify_access_token
+from app.config import settings
 
 logger = structlog.get_logger()
 
@@ -36,11 +48,13 @@ PUBLIC_PREFIXES = (
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Middleware that verifies JWT tokens and attaches current_user to request.
+    """Middleware that verifies JWT tokens, checks Redis sessions, and enforces RBAC.
 
     - Skips authentication for public routes (login, health, JWKS, etc.)
     - Reads JWT from `gatekeeper_token` cookie or `Authorization: Bearer` header
-    - On failure: returns 401 with login redirect info for browser flows
+    - Checks Redis for session validity (revocation support)
+    - Checks RBAC policies for route access
+    - On failure: returns 401/403 with login redirect info for browser flows
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -62,26 +76,61 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
             return self._unauthorized_response(request)
 
-        # Verify the token
+        # Verify the JWT
         try:
             claims = verify_access_token(token)
-            request.state.current_user = claims
-
-            logger.info(
-                "auth.verified",
-                user_id=claims.sub,
-                email=claims.email,
-                roles=claims.roles,
-                path=path,
-            )
-
         except pyjwt.ExpiredSignatureError:
             logger.warning("auth.token_expired", path=path)
             return self._unauthorized_response(request, message="Token expired")
-
         except pyjwt.InvalidTokenError as exc:
             logger.warning("auth.token_invalid", path=path, error=str(exc))
             return self._unauthorized_response(request, message="Invalid token")
+
+        # Check Redis session (if Redis is available)
+        if settings.redis_url:
+            try:
+                session = await get_session(claims.jti)
+                if session is None:
+                    logger.warning("auth.session_revoked", jti=claims.jti, path=path)
+                    return self._unauthorized_response(request, message="Session revoked")
+
+                # Use roles from Redis (may be updated after token issuance)
+                claims.roles = session.get("roles", claims.roles)
+            except RuntimeError:
+                # Redis not initialized (test/dev mode) — skip session check
+                logger.debug("auth.redis_not_initialized", path=path)
+            except Exception as exc:
+                # Redis down — fail closed (strict mode)
+                logger.error("auth.redis_error", error=str(exc), path=path)
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "Session service unavailable",
+                        "detail": "Redis is down. Cannot verify session.",
+                    },
+                )
+
+        # Check RBAC permissions
+        allowed, reason = check_route_access(path, claims.roles)
+        if not allowed:
+            logger.warning(
+                "rbac.forbidden",
+                path=path,
+                user_roles=claims.roles,
+                reason=reason,
+            )
+            return self._forbidden_response(request, reason=reason)
+
+        # Attach user context to request
+        request.state.current_user = claims
+
+        logger.info(
+            "auth.verified",
+            user_id=claims.sub,
+            email=claims.email,
+            roles=claims.roles,
+            path=path,
+        )
 
         return await call_next(request)
 
@@ -103,7 +152,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self, request: Request, message: str = "Authentication required"
     ) -> Response:
         """Return 401 with appropriate format based on request type."""
-        # Check if this is a browser request (Accept: text/html)
         accept = request.headers.get("accept", "")
         if "text/html" in accept:
             from starlette.responses import RedirectResponse
@@ -115,5 +163,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             content={
                 "error": message,
                 "login_url": "/login",
+            },
+        )
+
+    def _forbidden_response(
+        self, request: Request, reason: str = "Insufficient permissions"
+    ) -> Response:
+        """Return 403 Forbidden."""
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Forbidden",
+                "detail": reason,
             },
         )

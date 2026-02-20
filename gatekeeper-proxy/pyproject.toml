@@ -12,6 +12,7 @@ dependencies = [
     "PyJWT[crypto]>=2.8.0",
     "cryptography>=42.0.0",
     "python-multipart>=0.0.9",
+    "redis[hiredis]>=5.0.0",
 ]
 
 [project.optional-dependencies]

@@ -6,12 +6,15 @@ Also provides a dev login bypass for local development.
 
 from __future__ import annotations
 
+import hashlib
+
 import httpx
 import structlog
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.auth.tokens import create_access_token
+from app.auth.sessions import create_session
+from app.auth.tokens import create_access_token, verify_access_token
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -122,8 +125,21 @@ async def oauth_callback(request: Request, code: str) -> Response:
         access_token = create_access_token(
             user_id=google_id,
             email=email,
-            roles=["user"],  # Default role; will be enriched from DB in Phase 3
+            roles=["user"],  # Default role; will be enriched from DB later
         )
+
+        # Create Redis session for revocation support
+        try:
+            claims = verify_access_token(access_token)
+            await create_session(
+                jti=claims.jti,
+                user_id=google_id,
+                email=email,
+                roles=["user"],
+                ttl_seconds=settings.jwt_expiry_minutes * 60,
+            )
+        except Exception as session_exc:
+            log.warning("auth.session_create_failed", error=str(session_exc))
 
         # Set cookie and redirect to dashboard
         response = RedirectResponse(url="/", status_code=302)
@@ -271,8 +287,6 @@ async def dev_login_submit(request: Request) -> Response:
     role = str(form.get("role", "user"))
 
     # Generate a dev user ID from email
-    import hashlib
-
     user_id = hashlib.sha256(email.encode()).hexdigest()[:16]
 
     logger.info("auth.dev_login", email=email, role=role, user_id=user_id)
@@ -283,6 +297,19 @@ async def dev_login_submit(request: Request) -> Response:
         email=email,
         roles=[role],
     )
+
+    # Create Redis session
+    try:
+        claims = verify_access_token(access_token)
+        await create_session(
+            jti=claims.jti,
+            user_id=user_id,
+            email=email,
+            roles=[role],
+            ttl_seconds=settings.jwt_expiry_minutes * 60,
+        )
+    except Exception as session_exc:
+        logger.warning("auth.session_create_failed", error=str(session_exc))
 
     # Set cookie and redirect
     response = RedirectResponse(url="/", status_code=302)
