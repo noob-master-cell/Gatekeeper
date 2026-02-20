@@ -1,7 +1,8 @@
-"""Request logging middleware — structured JSON logging for every request."""
+"""Request logging middleware — structured JSON logging + audit trail."""
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 import structlog
@@ -9,11 +10,13 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.audit import emit_audit_event
+
 logger = structlog.get_logger()
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware that logs every request with structured metadata."""
+    """Middleware that logs every request with structured metadata and emits audit events."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         start_time = time.monotonic()
@@ -39,5 +42,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             status_code=response.status_code,
             duration_ms=duration_ms,
         )
+
+        # Emit audit event for authenticated requests
+        current_user = getattr(request.state, "current_user", None)
+        if current_user:
+            with contextlib.suppress(Exception):
+                await emit_audit_event(
+                    action="request",
+                    user_id=current_user.sub,
+                    email=current_user.email,
+                    roles=current_user.roles,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    client_ip=client_host,
+                    correlation_id=correlation_id,
+                    duration_ms=duration_ms,
+                )
 
         return response

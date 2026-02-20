@@ -99,7 +99,7 @@ zti/
 | **Phase 1** | Core proxy engine | ✅ Complete |
 | **Phase 2** | Identity layer (OAuth + JWT) | ✅ Complete |
 | **Phase 3** | Policy engine (Redis + RBAC) | ✅ Complete |
-| **Phase 4** | Zero-trust networking + observability | ⬜ Not started |
+| **Phase 4** | Zero-trust networking + observability | ✅ Complete |
 | **Phase 5** | Admin dashboard (React) | ⬜ Not started |
 
 ---
@@ -250,6 +250,57 @@ curl -X POST http://localhost:8000/admin/sessions/revoke \
   -H 'Content-Type: application/json' \
   -b cookies.txt -d '{"user_id": "user-456"}'
 ```
+
+---
+
+## ✅ Phase 4 — Zero-Trust Networking & Observability (Done)
+
+mTLS, audit logging, production Docker stack, and observability.
+
+### mTLS (Mutual TLS)
+
+```bash
+# Generate CA + server + client certificates
+make certs
+
+# Enable mTLS in docker-compose
+GK_MTLS_ENABLED=true make dev-up
+```
+
+| Certificate | Purpose | Location |
+|------------|---------|----------|
+| `ca.crt` | Certificate Authority | `infra/certs/` |
+| `server.crt/key` | Backend server identity | Mounted at `/certs` |
+| `client.crt/key` | Proxy client identity | Mounted at `/certs` |
+
+### Audit Logging
+
+- Every authenticated request → `audit:log` Redis stream + structlog
+- `/admin/audit-logs?count=100` — retrieve recent audit events
+- Fields: `user_id`, `email`, `roles`, `method`, `path`, `status_code`, `duration_ms`
+
+### Docker Stack
+
+```bash
+make dev-up     # Build and start all 5 services
+make logs       # Follow all logs
+make smoke      # Run smoke tests against running stack
+make dev-down   # Stop and clean up
+```
+
+| Service | Port | Health Check |
+|---------|------|-------------|
+| Proxy | 8000 | `/proxy/health` |
+| Backend | 8001 | `/health` |
+| Control Plane | 8002 | `/health` |
+| PostgreSQL | 5432 | `pg_isready` |
+| Redis | 6379 | `redis-cli ping` |
+
+### Observability
+
+- `/metrics` — service version + runtime info
+- Structured JSON logging (structlog) on every service
+- Correlation IDs propagated across proxy → backend
 
 ---
 

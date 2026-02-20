@@ -33,6 +33,7 @@ PUBLIC_ROUTES = frozenset(
         "/auth/logout",
         "/proxy/health",
         "/health",
+        "/metrics",
         "/.well-known/jwks.json",
     }
 )

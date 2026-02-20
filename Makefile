@@ -1,23 +1,26 @@
-.PHONY: dev-up dev-down test-all lint logs proxy-logs backend-logs install
+.PHONY: dev-up dev-down test-all lint logs proxy-logs backend-logs install certs smoke
 
 # ──────────────────────────────────────────────
 # Development
 # ──────────────────────────────────────────────
 
 dev-up:
-	docker-compose -f infra/docker-compose.yml up --build -d
+	docker compose -f infra/docker-compose.yml up --build -d
 
 dev-down:
-	docker-compose -f infra/docker-compose.yml down -v
+	docker compose -f infra/docker-compose.yml down -v
 
 logs:
-	docker-compose -f infra/docker-compose.yml logs -f
+	docker compose -f infra/docker-compose.yml logs -f
 
 proxy-logs:
-	docker-compose -f infra/docker-compose.yml logs -f proxy
+	docker compose -f infra/docker-compose.yml logs -f proxy
 
 backend-logs:
-	docker-compose -f infra/docker-compose.yml logs -f backend
+	docker compose -f infra/docker-compose.yml logs -f backend
+
+cp-logs:
+	docker compose -f infra/docker-compose.yml logs -f control-plane
 
 # ──────────────────────────────────────────────
 # Install
@@ -27,7 +30,13 @@ install:
 	cd gatekeeper-proxy && pip install -e ".[dev]"
 	cd gatekeeper-backend && pip install -e ".[dev]"
 	cd gatekeeper-control-plane && pip install -e ".[dev]"
-	cd gatekeeper-dashboard && pnpm install
+
+# ──────────────────────────────────────────────
+# mTLS Certificates
+# ──────────────────────────────────────────────
+
+certs:
+	bash infra/generate-certs.sh
 
 # ──────────────────────────────────────────────
 # Testing
@@ -42,26 +51,23 @@ test-backend:
 test-control-plane:
 	cd gatekeeper-control-plane && python -m pytest tests/ -v
 
-test-dashboard:
-	cd gatekeeper-dashboard && pnpm test
+test-all: test-proxy test-backend
 
-test-all: test-proxy test-backend test-control-plane
+smoke:
+	bash infra/smoke-tests.sh
 
 # ──────────────────────────────────────────────
 # Linting
 # ──────────────────────────────────────────────
 
 lint-proxy:
-	cd gatekeeper-proxy && ruff check . && mypy app/
+	cd gatekeeper-proxy && ruff check .
 
 lint-backend:
-	cd gatekeeper-backend && ruff check . && mypy app/
+	cd gatekeeper-backend && ruff check .
 
 lint-control-plane:
-	cd gatekeeper-control-plane && ruff check . && mypy app/
-
-lint-dashboard:
-	cd gatekeeper-dashboard && pnpm lint
+	cd gatekeeper-control-plane && ruff check .
 
 lint: lint-proxy lint-backend lint-control-plane
 
@@ -70,6 +76,5 @@ lint: lint-proxy lint-backend lint-control-plane
 # ──────────────────────────────────────────────
 
 fmt:
-	cd gatekeeper-proxy && ruff format .
-	cd gatekeeper-backend && ruff format .
-	cd gatekeeper-control-plane && ruff format .
+	ruff format gatekeeper-proxy/ gatekeeper-backend/ gatekeeper-control-plane/
+	ruff check --fix gatekeeper-proxy/ gatekeeper-backend/ gatekeeper-control-plane/

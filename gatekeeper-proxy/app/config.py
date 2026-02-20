@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Redis (sessions)
     redis_url: str = "redis://localhost:6379/0"
 
+    # mTLS
+    mtls_enabled: bool = False
+    mtls_cert_dir: str = "/certs"
+
     model_config = {"env_prefix": "GK_"}
 
 

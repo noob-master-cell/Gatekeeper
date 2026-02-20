@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="Gatekeeper Proxy",
     description="Zero-trust reverse proxy with authentication, RBAC, and audit logging.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -93,7 +93,7 @@ async def proxy_health() -> dict:
     return {
         "status": "ok",
         "service": "gatekeeper-proxy",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
@@ -145,6 +145,54 @@ async def revoke_session_endpoint(request: Request) -> JSONResponse:
             status_code=400,
             content={"error": "Provide either 'jti' or 'user_id' to revoke"},
         )
+
+
+# ─── Audit log API ────────────────────────────────────────────
+
+
+@app.get("/admin/audit-logs")
+async def list_audit_logs(request: Request) -> JSONResponse:
+    """List recent audit log entries from Redis stream."""
+    import json
+
+    from app.auth.sessions import get_redis
+
+    count = int(request.query_params.get("count", "50"))
+    try:
+        r = get_redis()
+        # Read last N entries from audit:log stream
+        entries = await r.xrevrange("audit:log", count=min(count, 500))
+        logs = []
+        for entry_id, fields in entries:
+            data = json.loads(fields["data"])
+            data["id"] = entry_id
+            logs.append(data)
+        return JSONResponse(content={"data": logs, "count": len(logs)})
+    except RuntimeError:
+        return JSONResponse(content={"data": [], "count": 0, "note": "Redis not initialized"})
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Audit log unavailable", "detail": str(exc)},
+        )
+
+
+# ─── Prometheus-style metrics ─────────────────────────────────
+
+
+@app.get("/metrics")
+async def metrics() -> JSONResponse:
+    """Basic operational metrics (Prometheus-compatible JSON)."""
+    import os
+
+    return JSONResponse(
+        content={
+            "service": "gatekeeper-proxy",
+            "version": "0.4.0",
+            "uptime": "running",
+            "python_version": os.sys.version,
+        }
+    )
 
 
 # ─── Catch-all reverse proxy route ───────────────────────────

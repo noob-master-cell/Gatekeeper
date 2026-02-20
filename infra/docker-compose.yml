@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# Gatekeeper — Docker Compose (Development)
+# Gatekeeper — Docker Compose (Full Stack)
 # ──────────────────────────────────────────────────────────────
 
 services:
@@ -14,8 +14,16 @@ services:
       - GK_BACKEND_URL=http://backend:8001
       - GK_LOG_LEVEL=DEBUG
       - GK_DEV_MODE=true
+      - GK_REDIS_URL=redis://redis:6379/0
+      - GK_KEYS_DIR=/tmp/gatekeeper_keys
+      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_CERT_DIR=/certs
+    volumes:
+      - certs:/certs:ro
     depends_on:
       backend:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - gatekeeper
@@ -29,12 +37,35 @@ services:
       - "8001:8001"
     environment:
       - LOG_LEVEL=DEBUG
+      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_CERT_DIR=/certs
+    volumes:
+      - certs:/certs:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
       interval: 5s
       timeout: 3s
       retries: 3
       start_period: 5s
+    networks:
+      - gatekeeper
+
+  # ── Control Plane ──────────────────────────────────────────
+  control-plane:
+    build:
+      context: ../gatekeeper-control-plane
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - GK_CP_DATABASE_URL=postgresql+asyncpg://gatekeeper:gatekeeper_dev@postgres:5432/gatekeeper
+      - GK_CP_REDIS_URL=redis://redis:6379/0
+      - GK_CP_LOG_LEVEL=DEBUG
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - gatekeeper
 
@@ -50,7 +81,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gatekeeper"]
+      test: [ "CMD-SHELL", "pg_isready -U gatekeeper" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -66,7 +97,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -76,6 +107,8 @@ services:
 volumes:
   pg_data:
   redis_data:
+  certs:
+
 
 networks:
   gatekeeper:
