@@ -3,6 +3,19 @@
 # ──────────────────────────────────────────────────────────────
 
 services:
+  # ── Admin Dashboard ────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../gatekeeper-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      proxy:
+        condition: service_healthy
+    networks:
+      - gatekeeper
+
   # ── Reverse Proxy ──────────────────────────────────────────
   proxy:
     build:
