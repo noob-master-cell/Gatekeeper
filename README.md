@@ -60,10 +60,15 @@ Modern organizations need to **secure access to internal APIs** without trusting
 zti/
 ├── gatekeeper-proxy/          # FastAPI reverse proxy (port 8000)
 │   ├── app/
-│   │   ├── main.py            # App entry, catch-all route
+│   │   ├── main.py            # App entry, catch-all route, JWKS
 │   │   ├── proxy.py           # httpx forwarding engine
-│   │   ├── config.py          # Pydantic settings
+│   │   ├── config.py          # Pydantic settings (OAuth, JWT, etc.)
+│   │   ├── auth/
+│   │   │   ├── keys.py        # RSA key management + JWKS
+│   │   │   ├── tokens.py      # JWT create/verify (RS256)
+│   │   │   └── oauth.py       # OAuth routes + dev login
 │   │   └── middleware/
+│   │       ├── auth.py        # JWT enforcement middleware
 │   │       ├── correlation.py # Correlation ID middleware
 │   │       └── logging.py     # Structured request logging
 │   ├── tests/
@@ -71,16 +76,7 @@ zti/
 │   └── pyproject.toml
 │
 ├── gatekeeper-backend/        # Dummy HR API (port 8001)
-│   ├── app/main.py
-│   ├── tests/
-│   ├── Dockerfile
-│   └── pyproject.toml
-│
 ├── gatekeeper-control-plane/  # RBAC, migrations, admin APIs
-│   ├── app/main.py
-│   ├── tests/
-│   └── pyproject.toml
-│
 ├── gatekeeper-dashboard/      # React + Tailwind admin UI
 │
 ├── infra/
@@ -101,7 +97,7 @@ zti/
 |-------|------------|--------|
 | **Phase 0** | Repo skeleton, tooling, CI | ✅ Complete |
 | **Phase 1** | Core proxy engine | ✅ Complete |
-| **Phase 2** | Identity layer (OAuth + JWT) | ⬜ Not started |
+| **Phase 2** | Identity layer (OAuth + JWT) | ✅ Complete |
 | **Phase 3** | Policy engine (Redis + RBAC) | ⬜ Not started |
 | **Phase 4** | Zero-trust networking + observability | ⬜ Not started |
 | **Phase 5** | Admin dashboard (React) | ⬜ Not started |
@@ -153,6 +149,65 @@ curl -X POST http://localhost:8000/api/hr/requests \
 # With custom correlation ID
 curl -H "X-Correlation-ID: my-trace-123" http://localhost:8000/health
 # → Response includes X-Correlation-ID: my-trace-123
+```
+
+---
+
+## ✅ Phase 2 — Identity Layer (Done)
+
+End-to-end authentication: Google OAuth login → JWT issuance → middleware enforcement.
+
+### Auth Sequence
+
+```
+Browser                Proxy                     Google
+  │                      │                          │
+  │──GET /login────────►│                          │
+  │◄─302 Redirect───────│──────────────────────────│
+  │─────────────────────────────────────────────────│
+  │◄────────────── code ────────────────────────────│
+  │──GET /oauth/callback?code=...──►│               │
+  │                      │──POST token exchange────►│
+  │                      │◄───── access_token ──────│
+  │                      │──GET /userinfo──────────►│
+  │                      │◄───── email, name ───────│
+  │                      │  Issue RS256 JWT          │
+  │◄─302 + Set-Cookie────│  (gatekeeper_token)      │
+  │                      │                          │
+  │──GET /api/hr/*───────│  (cookie in request)     │
+  │   + gatekeeper_token │──Verify JWT──►           │
+  │                      │──Forward to backend──►   │
+  │◄─────── 200 ─────────│◄──── Response ────────   │
+```
+
+### Features
+
+- **Google OAuth 2.0** — `/login` → Google → `/oauth/callback` → JWT cookie
+- **RS256 JWT** — RSA-2048 signed, `kid` header, 60-min expiry
+- **JWKS** — `/.well-known/jwks.json` for public key discovery
+- **Auth middleware** — Enforces JWT on protected routes; public bypass for `/login`, `/health`
+- **Dual auth** — `gatekeeper_token` cookie and `Authorization: Bearer` header
+- **Dev login** — Styled bypass form at `/auth/dev-login` (dev mode only)
+- **Browser redirect** — 302 to `/login` for HTML; 401 JSON for API clients
+
+### Example `curl` Commands (with auth)
+
+```bash
+# Dev login (get a token cookie)
+curl -X POST http://localhost:8000/auth/dev-login \
+  -d "email=dev@test.com&role=admin" -c cookies.txt -L
+
+# Access protected route with cookie
+curl -b cookies.txt http://localhost:8000/api/hr/employees
+
+# View JWKS public keys
+curl http://localhost:8000/.well-known/jwks.json
+
+# Check current user
+curl -b cookies.txt http://localhost:8000/auth/me
+
+# Logout
+curl -b cookies.txt http://localhost:8000/auth/logout -L
 ```
 
 ---
