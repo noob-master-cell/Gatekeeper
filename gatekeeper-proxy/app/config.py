@@ -27,7 +27,19 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Dev mode
-    dev_mode: bool = False
+    dev_mode: bool = True
+
+    # ─── Auth / OAuth ─────────────────────────────────────
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/oauth/callback"
+
+    # JWT
+    jwt_expiry_minutes: int = 60
+    keys_dir: str = "/tmp/gatekeeper_keys"
+
+    # Dev login bypass (only works when dev_mode=True)
+    dev_login_enabled: bool = True
 
     model_config = {"env_prefix": "GK_"}
 

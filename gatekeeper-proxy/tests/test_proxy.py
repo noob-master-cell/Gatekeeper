@@ -136,8 +136,17 @@ async def test_proxy_preserves_correlation_id(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_proxy_forward_returns_502_when_backend_down(client: AsyncClient):
     """When backend is unreachable, proxy should return 502."""
+    from app.auth.keys import initialize_keys
+    from app.auth.tokens import create_access_token
+
+    initialize_keys()
+    token = create_access_token(user_id="test", email="test@test.com")
+
     # The backend isn't running in test mode, so forwarding should fail
-    response = await client.get("/api/hr/employees")
+    response = await client.get(
+        "/api/hr/employees",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == 502
     data = response.json()
     assert "error" in data
