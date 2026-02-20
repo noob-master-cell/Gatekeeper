@@ -1,0 +1,82 @@
+# ──────────────────────────────────────────────────────────────
+# Gatekeeper — Docker Compose (Development)
+# ──────────────────────────────────────────────────────────────
+
+services:
+  # ── Reverse Proxy ──────────────────────────────────────────
+  proxy:
+    build:
+      context: ../gatekeeper-proxy
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - GK_BACKEND_URL=http://backend:8001
+      - GK_LOG_LEVEL=DEBUG
+      - GK_DEV_MODE=true
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - gatekeeper
+
+  # ── Dummy Backend ──────────────────────────────────────────
+  backend:
+    build:
+      context: ../gatekeeper-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - LOG_LEVEL=DEBUG
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - gatekeeper
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: gatekeeper
+      POSTGRES_PASSWORD: gatekeeper_dev
+      POSTGRES_DB: gatekeeper
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gatekeeper"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - gatekeeper
+
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - gatekeeper
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  gatekeeper:
+    driver: bridge
