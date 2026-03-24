@@ -14,7 +14,7 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Write an nginx config TEMPLATE (uses $PROXY_URL and $LISTEN_PORT placeholders)
-RUN printf 'server {\n\
+RUN mkdir -p /etc/nginx/templates && printf 'server {\n\
   listen ${LISTEN_PORT};\n\
   proxy_set_header Host $host;\n\
   proxy_set_header X-Real-IP $remote_addr;\n\
