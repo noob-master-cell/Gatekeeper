@@ -13,12 +13,36 @@ FROM nginx:alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# SPA fallback
-RUN printf 'server {\n  listen 3000;\n  proxy_set_header Host $host;\n  proxy_set_header X-Real-IP $remote_addr;\n  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n  proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;\n  location / {\n    root /usr/share/nginx/html;\n    try_files $uri $uri/ /index.html;\n  }\n  location /admin {\n    proxy_pass http://proxy:8000;\n  }\n  location /auth {\n    proxy_pass http://proxy:8000;\n  }\n  location /metrics {\n    proxy_pass http://proxy:8000;\n  }\n  location /proxy {\n    proxy_pass http://proxy:8000;\n  }\n  location /.well-known {\n    proxy_pass http://proxy:8000;\n  }\n  location /login {\n    proxy_pass http://proxy:8000;\n  }\n  location /oauth {\n    proxy_pass http://proxy:8000;\n  }\n  location /api {\n    proxy_pass http://proxy:8000;\n  }\n}\n' > /etc/nginx/conf.d/default.conf
+# Write an nginx config TEMPLATE (uses $PROXY_URL and $LISTEN_PORT placeholders)
+RUN printf 'server {\n\
+  listen ${LISTEN_PORT};\n\
+  proxy_set_header Host $host;\n\
+  proxy_set_header X-Real-IP $remote_addr;\n\
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+  proxy_set_header X-Forwarded-Proto $scheme;\n\
+  location / {\n\
+    root /usr/share/nginx/html;\n\
+    try_files $uri $uri/ /index.html;\n\
+  }\n\
+  location /admin  { proxy_pass ${PROXY_URL}; }\n\
+  location /auth   { proxy_pass ${PROXY_URL}; }\n\
+  location /metrics { proxy_pass ${PROXY_URL}; }\n\
+  location /proxy  { proxy_pass ${PROXY_URL}; }\n\
+  location /.well-known { proxy_pass ${PROXY_URL}; }\n\
+  location /login  { proxy_pass ${PROXY_URL}; }\n\
+  location /oauth  { proxy_pass ${PROXY_URL}; }\n\
+  location /api    { proxy_pass ${PROXY_URL}; }\n\
+}\n' > /etc/nginx/templates/default.conf.template
+
+# Defaults: Docker Compose uses proxy:8000, Railway overrides via env vars
+ENV PROXY_URL=http://proxy:8000
+ENV LISTEN_PORT=3000
 
 EXPOSE ${PORT:-3000}
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-    CMD sh -c "wget -q --spider http://localhost:${PORT:-3000}/ || exit 1"
+    CMD sh -c "wget -q --spider http://localhost:${LISTEN_PORT}/ || exit 1"
 
-CMD sed -i -e 's/listen 3000;/listen '"${PORT:-3000}"';/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'
+# envsubst runs automatically via nginx:alpine's docker-entrypoint on *.template files
+# We also override LISTEN_PORT from PORT if set (Railway sets PORT)
+CMD sh -c "export LISTEN_PORT=\${PORT:-3000} && /docker-entrypoint.sh nginx -g 'daemon off;'"
