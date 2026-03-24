@@ -22,4 +22,4 @@ EXPOSE ${PORT:-8000}
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",\"8000\")}/proxy/health')"
 
-CMD sh -c "python -c 'from app.auth.keys import initialize_keys; initialize_keys()' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 4"
+CMD sh -c "python -c 'from app.auth.keys import initialize_keys; initialize_keys()' && uvicorn app.main:app --host :: --port ${PORT:-8000} --workers 4"
