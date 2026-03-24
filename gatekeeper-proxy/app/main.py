@@ -114,10 +114,7 @@ app.add_middleware(CorrelationIdMiddleware)
 from starlette.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",    # Dashboard (dev)
-        "https://localhost:3000",   # Dashboard (dev, HTTPS)
-    ],
+    allow_origins=settings.parsed_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],

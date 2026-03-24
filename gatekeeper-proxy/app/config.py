@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # Dev mode (defaults to False for safety — enable explicitly for local dev)
     dev_mode: bool = False
 
+    # CORS / CSRF allowed origins
+    cors_origins: str = "http://localhost:3000,http://localhost:8000,https://localhost:3000,https://localhost:8000"
+
+    @property
+    def parsed_cors_origins(self) -> list[str]:
+        """Return the allowed origins as a parsed list of strings."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # ─── Auth / OAuth ─────────────────────────────────────
     google_client_id: str = ""
     google_client_secret: str = ""

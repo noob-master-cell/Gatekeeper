@@ -22,13 +22,10 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "DELETE", "PATCH"})
 # Paths exempt from CSRF checks (e.g. OAuth callbacks, which come from Google)
 CSRF_EXEMPT_PATHS = frozenset({"/oauth/callback"})
 
+from app.config import settings
+
 # Allowed origins (extend via config in production)
-ALLOWED_ORIGINS = {
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "https://localhost:3000",
-    "https://localhost:8000",
-}
+ALLOWED_ORIGINS = set(settings.parsed_cors_origins)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
