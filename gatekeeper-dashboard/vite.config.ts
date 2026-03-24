@@ -12,6 +12,9 @@ export default defineConfig({
       '/metrics': 'http://localhost:8000',
       '/proxy': 'http://localhost:8000',
       '/.well-known': 'http://localhost:8000',
+      '/login': 'http://localhost:8000',
+      '/oauth': 'http://localhost:8000',
+      '/api': 'http://localhost:8000',
     },
   },
 })

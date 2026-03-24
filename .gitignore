@@ -47,3 +47,4 @@ infra/certs/*.srl
 
 # Build artifacts
 gatekeeper-dashboard/dist/
+infra/.env.production

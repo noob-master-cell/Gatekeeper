@@ -1,34 +1,43 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", system-ui, sans-serif;
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
-  --color-surface-50: #f8fafc;
-  --color-surface-100: #f1f5f9;
-  --color-surface-700: #334155;
-  --color-surface-800: #1e293b;
-  --color-surface-850: #172032;
-  --color-surface-900: #0f172a;
-  --color-surface-950: #020617;
-  --color-emerald-500: #10b981;
-  --color-red-500: #ef4444;
-  --color-amber-500: #f59e0b;
+  --font-sans: "JetBrains Mono", "Space Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  
+  --color-brand-50: #ffece5;
+  --color-brand-100: #ffd1c2;
+  --color-brand-200: #ffb199;
+  --color-brand-300: #ff8c6b;
+  --color-brand-400: #ff6842;
+  --color-brand-500: #FF3A20; /* TE Vermilion Red-Orange */
+  --color-brand-600: #e62e17;
+  --color-brand-700: #cc220f;
+  --color-brand-800: #b31908;
+  --color-brand-900: #991004;
+
+  /* Matte Charcoal surfaces */
+  --color-surface-50: #f7f7f8;
+  --color-surface-100: #e8e8ea;
+  --color-surface-700: #3a3a3c;
+  --color-surface-800: #2c2c2e;
+  --color-surface-850: #242426;
+  --color-surface-900: #1c1c1e; /* Cards, panels */
+  --color-surface-950: #121212; /* Deep matte background */
+  
+  --color-emerald-500: #00FF55; /* Neon Mint */
+  --color-red-500: #FF003C; /* Digital Red */
+  --color-amber-500: #DFFF00; /* Pure LED Yellow (Volt) */
+  --color-indigo-500: #00E5FF; /* Electric Cyan */
+
+  /* Custom TE shadows */
+  --shadow-te: 4px 4px 0px 0px rgba(0,0,0,1);
+  --shadow-te-sm: 2px 2px 0px 0px rgba(0,0,0,1);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+/* Scrollbar layout - stark and functional */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0f0f0f; border-left: 1px solid #333; }
+::-webkit-scrollbar-thumb { background: #333; border: 1px solid #1a1a1a; }
+::-webkit-scrollbar-thumb:hover { background: #ff6b00; }
 
 /* Animations */
 @keyframes fadeIn {

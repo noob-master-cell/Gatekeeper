@@ -1,0 +1,142 @@
+# ──────────────────────────────────────────────────────────────
+# Gatekeeper — Production Docker Compose
+# ──────────────────────────────────────────────────────────────
+# Usage: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d
+
+services:
+  # ── Reverse Proxy (scalable) ────────────────────────────────
+  proxy:
+    build:
+      context: ../gatekeeper-proxy
+      dockerfile: Dockerfile
+    environment:
+      - GK_BACKEND_URL=${GK_BACKEND_URL}
+      - GK_CONTROL_PLANE_URL=${GK_CONTROL_PLANE_URL}
+      - GK_LOG_LEVEL=INFO
+      - GK_DEV_MODE=${GK_DEV_MODE}
+      - GK_DEV_LOGIN_ENABLED=${GK_DEV_LOGIN_ENABLED}
+      - GK_REDIS_URL=${GK_REDIS_URL}
+      - GK_KEYS_DIR=${GK_KEYS_DIR}
+      - GK_GOOGLE_CLIENT_ID=${GK_GOOGLE_CLIENT_ID}
+      - GK_GOOGLE_CLIENT_SECRET=${GK_GOOGLE_CLIENT_SECRET}
+      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI}
+      - GK_JWT_EXPIRY_MINUTES=${GK_JWT_EXPIRY_MINUTES}
+      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_CERT_DIR=${GK_MTLS_CERT_DIR}
+    volumes:
+      - certs:/certs:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    networks:
+      - gatekeeper
+
+  # ── Load Balancer ───────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      - proxy
+    networks:
+      - gatekeeper
+
+  # ── Backend ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../gatekeeper-backend
+      dockerfile: Dockerfile
+    environment:
+      - LOG_LEVEL=INFO
+      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_CERT_DIR=/certs
+    volumes:
+      - certs:/certs:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - gatekeeper
+
+  # ── Control Plane ───────────────────────────────────────────
+  control-plane:
+    build:
+      context: ../gatekeeper-control-plane
+      dockerfile: Dockerfile
+    environment:
+      - GK_CP_DATABASE_URL=${GK_CP_DATABASE_URL}
+      - GK_CP_REDIS_URL=${GK_CP_REDIS_URL}
+      - GK_CP_LOG_LEVEL=${GK_CP_LOG_LEVEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gatekeeper
+
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gatekeeper
+
+  # ── Redis ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - gatekeeper
+
+  # ── Dashboard ───────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../gatekeeper-dashboard
+      dockerfile: Dockerfile
+    depends_on:
+      - proxy
+    networks:
+      - gatekeeper
+
+volumes:
+  pg_data:
+  redis_data:
+  certs:
+
+
+networks:
+  gatekeeper:
+    driver: bridge

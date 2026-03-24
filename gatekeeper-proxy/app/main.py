@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse
 
 from app.auth.keys import get_jwks, initialize_keys
@@ -17,6 +17,8 @@ from app.config import settings
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.metrics import MetricsMiddleware
+from app.middleware.posture import DevicePostureMiddleware
 from app.proxy import close_client, forward_request
 
 # ─── Structured logging setup ────────────────────────────────
@@ -39,6 +41,22 @@ logger = structlog.get_logger()
 
 # ─── App lifecycle ────────────────────────────────────────────
 
+import asyncio
+from app.auth.rbac import sync_policies
+from app.auth.sessions import get_redis
+from app.middleware.posture import sync_posture_rules
+
+async def poll_policies():
+    """Periodically fetch RBAC and Posture policies from Redis."""
+    while True:
+        try:
+            r = get_redis()
+            await sync_policies(r)
+            await sync_posture_rules(r)
+        except Exception:
+            pass
+        await asyncio.sleep(10)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -53,6 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.redis_url:
         try:
             await init_redis(settings.redis_url)
+            # Start background policy sync
+            asyncio.create_task(poll_policies())
         except Exception as exc:
             logger.warning("proxy.redis_init_failed", error=str(exc))
 
@@ -73,12 +93,39 @@ app = FastAPI(
 )
 
 # Add middleware (order matters: outermost middleware runs first)
-# 1. Correlation ID (outermost — every request gets an ID)
-# 2. Logging (logs every request with correlation ID)
-# 3. Auth (enforces JWT + Redis sessions + RBAC)
+# 1. Security Headers (adds browser security headers to all responses)
+# 2. CORS (handles preflight and cross-origin requests)
+# 3. Correlation ID (every request gets a unique ID)
+# 4. Logging (logs every request with correlation ID)
+# 5. Rate Limiting (blocks excessive requests early)
+# 6. Metrics (records success/failure counts)
+# 7. Device Posture (blocks bad IPs/UAs before auth)
+# 8. Auth (enforces JWT + Redis sessions + RBAC)
 app.add_middleware(AuthMiddleware)
+from app.middleware.csrf import CSRFMiddleware
+app.add_middleware(CSRFMiddleware)
+app.add_middleware(DevicePostureMiddleware)
+app.add_middleware(MetricsMiddleware)
+from app.middleware.ratelimit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
+
+from starlette.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",    # Dashboard (dev)
+        "https://localhost:3000",   # Dashboard (dev, HTTPS)
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-Correlation-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+)
+
+from app.middleware.security_headers import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount auth routes
 app.include_router(auth_router)
@@ -147,6 +194,20 @@ async def revoke_session_endpoint(request: Request) -> JSONResponse:
         )
 
 
+@app.delete("/admin/sessions/{jti}")
+async def delete_session_endpoint(jti: str, request: Request) -> JSONResponse:
+    """Kill a single session by its JTI."""
+    from app.auth.sessions import revoke_session
+
+    success = await revoke_session(jti)
+    if success:
+        return JSONResponse(content={"revoked": True, "jti": jti})
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Session not found", "jti": jti},
+    )
+
+
 # ─── Audit log API ────────────────────────────────────────────
 
 
@@ -158,16 +219,55 @@ async def list_audit_logs(request: Request) -> JSONResponse:
     from app.auth.sessions import get_redis
 
     count = int(request.query_params.get("count", "50"))
+    cursor = request.query_params.get("cursor", "+")
+    email_filter = request.query_params.get("email", "").lower()
+    path_filter = request.query_params.get("path", "").lower()
+    method_filter = request.query_params.get("method", "").upper()
+    status_filter = request.query_params.get("status_code", "")
+
     try:
         r = get_redis()
-        # Read last N entries from audit:log stream
-        entries = await r.xrevrange("audit:log", count=min(count, 500))
         logs = []
-        for entry_id, fields in entries:
-            data = json.loads(fields["data"])
-            data["id"] = entry_id
-            logs.append(data)
-        return JSONResponse(content={"data": logs, "count": len(logs)})
+        max_iterations = 20
+        batch_size = max(50, count)
+        current_cursor = cursor
+
+        for _ in range(max_iterations):
+            entries = await r.xrevrange("audit:log", max=current_cursor, min="-", count=batch_size)
+            if not entries:
+                break
+                
+            for entry_id, fields in entries:
+                # Redis xrevrange is inclusive of max, so skip the cursor if we explicitly set it
+                if cursor != "+" and entry_id == current_cursor and current_cursor == cursor:
+                    continue
+                    
+                data = json.loads(fields["data"])
+                
+                # Apply optional filters
+                if email_filter and email_filter not in str(data.get("email", "")).lower(): continue
+                if path_filter and path_filter not in str(data.get("path", "")).lower(): continue
+                if method_filter and data.get("method") != method_filter: continue
+                if status_filter and str(data.get("status_code")) != status_filter: continue
+                
+                data["id"] = entry_id
+                logs.append(data)
+                current_cursor = entry_id
+                
+                if len(logs) >= count:
+                    break
+            
+            if len(logs) >= count:
+                break
+                
+            # If we only fetched entries we've already seen, break to avoid infinite loop
+            last_entry_id = entries[-1][0]
+            if current_cursor == last_entry_id and len(entries) == 1:
+                break
+            current_cursor = last_entry_id
+
+        next_cursor = current_cursor if len(logs) == count else None
+        return JSONResponse(content={"data": logs, "count": len(logs), "next_cursor": next_cursor})
     except RuntimeError:
         return JSONResponse(content={"data": [], "count": 0, "note": "Redis not initialized"})
     except Exception as exc:
@@ -195,10 +295,59 @@ async def metrics() -> JSONResponse:
     )
 
 
+# ─── RBAC Policy Simulator Sandbox ────────────────────────────
+
+@app.post("/admin/policies/simulate")
+async def simulate_policy(request: Request):
+    """Simulate exactly how the RBAC engine will handle a hypothetical request."""
+    data = await request.json()
+    path = data.get("path", "/")
+    roles = data.get("roles", ["user"])
+    email = data.get("email", "sandbox@test.local")
+    
+    from app.auth.rbac import check_route_access
+    allowed, reason = check_route_access(path, roles)
+    
+    return JSONResponse(content={
+        "allowed": allowed,
+        "reason": reason,
+        "email": email,
+        "simulated_roles": roles,
+        "path": path,
+    })
+
+
 # ─── Catch-all reverse proxy route ───────────────────────────
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-async def proxy_route(request: Request, path: str):
-    """Forward all requests to the backend target."""
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@app.api_route("/admin/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy_route_api(request: Request, path: str):
+    """Forward /api/* and /admin/* requests to the backend targets."""
     return await forward_request(request)
+
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException
+from starlette.responses import FileResponse
+
+public_dir = "/tmp/gatekeeper/public"
+if os.path.exists(public_dir):
+    # Serve the React SPA. This automatically serves index.html at /
+    app.mount("/", StaticFiles(directory=public_dir, html=True), name="public")
+
+    # Add a global 404 handler to support React Router SPA navigation
+    @app.exception_handler(404)
+    async def spa_not_found(request: Request, exc: HTTPException):
+        # Don't serve index.html for API missing endpoints
+        if request.url.path.startswith("/api/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/auth/"):
+            return JSONResponse(status_code=404, content={"error": "Not Found"})
+        index_path = os.path.join(public_dir, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return JSONResponse(status_code=404, content={"error": "Not Found"})
+else:
+    # Fallback catch-all if static files aren't built
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+    async def proxy_route_catchall(request: Request, path: str):
+        return await forward_request(request)

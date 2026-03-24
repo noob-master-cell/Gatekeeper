@@ -21,6 +21,16 @@ from app.services.user_service import (
     seed_roles,
     upsert_user,
 )
+from app.services.policy_service import (
+    create_or_update_policy,
+    delete_policy,
+    list_all_policies,
+    sync_policies_to_redis,
+    list_all_posture_rules,
+    create_or_update_posture_rule,
+    delete_posture_rule,
+    sync_posture_to_redis,
+)
 
 logger = structlog.get_logger()
 
@@ -43,14 +53,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("control_plane.redis_failed", error=str(exc))
         _redis = None
 
-    # Seed roles
+    # Seed roles and sync policies to Redis
     async with async_session() as session:
         try:
             await seed_roles(session)
+            # Define some default policies if none exist
+            from app.services.policy_service import ensure_default_policies
+            await ensure_default_policies(session)
+            
+            # Ensure posture rules sync to redis on startup as well
+            if _redis:
+                await sync_policies_to_redis(session, _redis)
+                await sync_posture_to_redis(session, _redis)
         except Exception as exc:
+            import traceback
+            with open("/tmp/seed_error.txt", "w") as f:
+                f.write(traceback.format_exc())
             logger.warning("control_plane.seed_failed", error=str(exc))
 
+    # Start background audit log sync worker
+    import asyncio
+    _audit_task = None
+    if _redis:
+        from app.services.audit_sync import sync_audit_logs
+        _audit_task = asyncio.create_task(sync_audit_logs(async_session, _redis))
+        logger.info("control_plane.audit_sync_started")
+
     yield
+
+    # Cancel audit sync on shutdown
+    if _audit_task and not _audit_task.done():
+        _audit_task.cancel()
+        try:
+            await _audit_task
+        except asyncio.CancelledError:
+            pass
 
     if _redis:
         await _redis.close()
@@ -65,6 +102,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add API key authentication middleware
+from app.middleware import APIKeyMiddleware
+
+app.add_middleware(APIKeyMiddleware)
 
 # ─── Health ───────────────────────────────────────────────────
 
@@ -99,21 +140,60 @@ async def create_or_update_user(request: Request) -> JSONResponse:
     if not email:
         return JSONResponse(status_code=400, content={"error": "Email is required"})
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models import User, Role
+
     async with async_session() as session:
-        user = await upsert_user(
-            session,
-            email=email,
-            google_id=body.get("google_id"),
-            name=body.get("name"),
-            default_role=body.get("role", "user"),
+        # Check if user exists
+        result = await session.execute(
+            select(User).where(User.email == email).options(selectinload(User.roles))
         )
-    return JSONResponse(
-        content={
-            "id": user.id,
-            "email": user.email,
-            "roles": user.role_names(),
-        }
-    )
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            # Create new user
+            from datetime import datetime, UTC
+            user = User(
+                email=email,
+                google_id=body.get("google_id"),
+                name=body.get("name"),
+                created_at=datetime.now(UTC),
+                last_login_at=datetime.now(UTC),
+            )
+            session.add(user)
+            await session.flush()
+
+            # Assign role via direct insert to avoid lazy-load on new object
+            role_name = body.get("role", "user")
+            role_result = await session.execute(select(Role).where(Role.name == role_name))
+            role_obj = role_result.scalar_one_or_none()
+            if role_obj:
+                from app.models import user_roles
+                await session.execute(
+                    user_roles.insert().values(user_id=user.id, role_id=role_obj.id)
+                )
+        else:
+            # Update existing user
+            from datetime import datetime, UTC
+            user.last_login_at = datetime.now(UTC)
+            if body.get("google_id") and not user.google_id:
+                user.google_id = body.get("google_id")
+            if body.get("name") and not user.name:
+                user.name = body.get("name")
+
+        await session.commit()
+
+        # Re-fetch with eager loading after commit
+        fresh = await session.execute(
+            select(User).where(User.email == email).options(selectinload(User.roles))
+        )
+        user = fresh.scalar_one()
+        user_id = user.id
+        user_email = user.email
+        role_list = [r.name for r in user.roles]
+
+    return JSONResponse(content={"id": user_id, "email": user_email, "roles": role_list})
 
 
 # ─── Roles API ────────────────────────────────────────────────
@@ -218,3 +298,198 @@ async def revoke_session(request: Request) -> JSONResponse:
             status_code=400,
             content={"error": "Provide 'jti' or 'user_id'"},
         )
+
+
+# ─── RBAC Route Policies API ─────────────────────────────────
+
+
+@app.get("/admin/policies")
+async def get_policies() -> JSONResponse:
+    """List all route RBAC policies."""
+    async with async_session() as session:
+        policies = await list_all_policies(session)
+    data = []
+    for p in policies:
+        data.append({
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "pattern": p.pattern,
+            "priority": p.priority,
+            "is_active": p.is_active,
+            "allow_any_authenticated": p.allow_any_authenticated,
+            "roles": [r.name for r in p.roles],
+        })
+    return JSONResponse(content={"data": data, "count": len(data)})
+
+
+@app.post("/admin/policies")
+async def create_policy(request: Request) -> JSONResponse:
+    """Create or update a route policy."""
+    body = await request.json()
+    name = body.get("name")
+    pattern = body.get("pattern")
+    
+    if not name or not pattern:
+        return JSONResponse(status_code=400, content={"error": "Name and pattern required"})
+
+    async with async_session() as session:
+        policy = await create_or_update_policy(
+            session=session,
+            name=name,
+            pattern=pattern,
+            priority=int(body.get("priority", 100)),
+            is_active=bool(body.get("is_active", True)),
+            allow_any_authenticated=bool(body.get("allow_any_authenticated", False)),
+            description=body.get("description"),
+            roles=body.get("roles", [])
+        )
+        if _redis:
+            await sync_policies_to_redis(session, _redis)
+
+    return JSONResponse(content={"message": f"Policy '{name}' saved."})
+
+
+@app.delete("/admin/policies/{name}")
+async def remove_policy(name: str) -> JSONResponse:
+    """Delete a route policy."""
+    async with async_session() as session:
+        success = await delete_policy(session, name)
+        if success and _redis:
+            await sync_policies_to_redis(session, _redis)
+
+    if not success:
+        return JSONResponse(status_code=404, content={"error": "Policy not found"})
+    return JSONResponse(content={"message": f"Policy '{name}' deleted."})
+
+
+# ─── Device Posture API ──────────────────────────────────────
+
+
+@app.get("/admin/posture")
+async def get_posture_rules() -> JSONResponse:
+    """List all device posture rules."""
+    async with async_session() as session:
+        rules = await list_all_posture_rules(session)
+    data = []
+    for r in rules:
+        data.append({
+            "id": r.id,
+            "rule_type": r.rule_type,
+            "value": r.value,
+            "action": r.action,
+            "is_active": r.is_active,
+            "description": r.description,
+        })
+    return JSONResponse(content={"data": data, "count": len(data)})
+
+
+@app.post("/admin/posture")
+async def create_posture_rule(request: Request) -> JSONResponse:
+    """Create or update a device posture rule."""
+    body = await request.json()
+    rule_type = body.get("rule_type")
+    value = body.get("value")
+    
+    if not rule_type or not value:
+        return JSONResponse(status_code=400, content={"error": "rule_type and value required"})
+
+    async with async_session() as session:
+        rule = await create_or_update_posture_rule(
+            session=session,
+            rule_type=rule_type,
+            value=value,
+            action=body.get("action", "block"),
+            is_active=bool(body.get("is_active", True)),
+            description=body.get("description"),
+        )
+        if _redis:
+            await sync_posture_to_redis(session, _redis)
+
+    return JSONResponse(content={"message": f"Posture rule '{rule_type}:{value}' saved."})
+
+
+@app.delete("/admin/posture/{rule_id}")
+async def remove_posture_rule(rule_id: int) -> JSONResponse:
+    """Delete a device posture rule."""
+    async with async_session() as session:
+        success = await delete_posture_rule(session, rule_id)
+        if success and _redis:
+            await sync_posture_to_redis(session, _redis)
+
+    if not success:
+        return JSONResponse(status_code=404, content={"error": "Rule not found"})
+    return JSONResponse(content={"message": f"Rule {rule_id} deleted."})
+
+
+# ─── Traffic Metrics API ──────────────────────────────────────
+
+
+@app.get("/admin/metrics/traffic")
+async def get_traffic_metrics() -> JSONResponse:
+    """Return the last 24 hours of aggregated traffic successes and blocks."""
+    if not _redis:
+        return JSONResponse(status_code=503, content={"error": "Redis not available"})
+
+    from datetime import datetime, timedelta, UTC
+
+    now = datetime.now(UTC)
+    data = []
+
+    # Get the last 24 hours including the current hour
+    for i in range(23, -1, -1):
+        target_time = now - timedelta(hours=i)
+        hour_str = target_time.strftime("%Y-%m-%d-%H")
+        
+        success_key = f"traffic:success:{hour_str}"
+        blocked_key = f"traffic:blocked:{hour_str}"
+
+        # Fetch both counters concurrently
+        import asyncio
+        success_count, blocked_count = await asyncio.gather(
+            _redis.get(success_key),
+            _redis.get(blocked_key)
+        )
+
+        data.append({
+            "time": target_time.strftime("%H:00"),
+            "success": int(success_count or 0),
+            "blocked": int(blocked_count or 0),
+        })
+
+    return JSONResponse(content={"data": data})
+
+
+@app.get("/admin/metrics/top-paths")
+async def get_top_paths() -> JSONResponse:
+    """Return today's most requested paths (descending by count)."""
+    if not _redis:
+        return JSONResponse(status_code=503, content={"error": "Redis not available"})
+
+    from datetime import datetime, UTC
+
+    day_key = datetime.now(UTC).strftime("%Y-%m-%d")
+    redis_key = f"traffic:top_paths:{day_key}"
+
+    raw = await _redis.zrevrange(redis_key, 0, 19, withscores=True)
+    data = [{"path": path, "count": int(score)} for path, score in raw]
+
+    return JSONResponse(content={"data": data})
+
+
+@app.get("/admin/metrics/top-blocked-ips")
+async def get_top_blocked_ips() -> JSONResponse:
+    """Return today's most blocked client IP addresses."""
+    if not _redis:
+        return JSONResponse(status_code=503, content={"error": "Redis not available"})
+
+    from datetime import datetime, UTC
+
+    day_key = datetime.now(UTC).strftime("%Y-%m-%d")
+    redis_key = f"traffic:top_blocked_ips:{day_key}"
+
+    raw = await _redis.zrevrange(redis_key, 0, 19, withscores=True)
+    data = [{"ip": ip, "count": int(score)} for ip, score in raw]
+
+    return JSONResponse(content={"data": data})
+

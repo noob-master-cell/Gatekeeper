@@ -4,21 +4,29 @@
 
 ---
 
-## 🎯 Problem Statement
+## 🎯 1. What is this project about?
+**Gatekeeper** is a production-grade, zero-trust reverse proxy system designed to secure access to internal APIs and services. In a zero-trust architecture, no network request is implicitly trusted just because it originated from an internal network or VPN. Instead, Gatekeeper acts as a hardened perimeter wall that intercepts every single request, verifies cryptographic identity, enforces role-based access control (RBAC), and encrypts traffic before allowing it to touch the actual backend services.
 
-Modern organizations need to **secure access to internal APIs** without trusting any network boundary. Traditional perimeter-based security fails when:
+It essentially replaces archaic VPNs with modern, granular, identity-aware routing, ensuring that only authenticated personnel with the correct permissions can access sensitive internal endpoints.
 
-- Employees access services from anywhere (remote, VPN, cloud).
-- Internal APIs are exposed between microservices with no access control.
-- There's no audit trail of who accessed what, when.
+## 🚀 2. What have we done in this project?
+Throughout your work on this infrastructure, you have built and hardened an entire ecosystem from the ground up:
 
-**Gatekeeper** solves this by placing a **zero-trust reverse proxy** between clients and backend services that enforces:
+### Phase 1: Security Hardening & Zero-Trust Verification
+*   **Production Audit:** Conducted a comprehensive security audit resulting in 10 critical fixes, elevating the project from a development playground to a production-ready system.
+*   **mTLS (Mutual TLS):** Enforced end-to-end encryption between the Control Plane, the Proxy, and the dummy Backends, meaning even if the internal network is compromised, traffic cannot be sniffed or spoofed.
+*   **API Security:** Stripped away insecure bypasses (like the `/auth/dev-login` route) and integrated **true Google OAuth 2.0 (SSO)**, forcing real cryptographic validation for all users.
+*   **Defensive Middleware:** Engineered advanced middlewares including nested CSRF protection, strict `SameSite`/`Secure` cookie directives, HSTS headers, and tiered Redis-backed rate limiters.
 
-1. **Authentication** — Google OAuth → JWT token issuance
-2. **Authorization** — RBAC with Redis-cached policies
-3. **Encryption** — mTLS between proxy and backends
-4. **Observability** — Structured audit logging with correlation IDs
-5. **Administration** — Real-time traffic monitoring and session management
+### Phase 2: Observability & Dashboard Modernization
+*   **Teenage Engineering Redesign:** Completely overhauled the React frontend. Stripped away generic gradients and replaced them with a striking, brutalist "Teenage Engineering" aesthetic (Matte charcoal, high-contrast Vermilion/Cyan, rigid structural borders, and tactile modular components).
+*   **Mission Control:** Rebuilt the `OverviewView` into a dense, real-time analytics hub. It instantly aggregates the last 500 network requests in the browser, calculates threat-block rates, and identifies top-hit routes and highly active identities at a glance.
+*   **Cursor-Based Time Travel:** Broke past the original 100-event limit by engineering a backend Redis cursor that allows administrators to infinitely scroll backward through time in the `TrafficView`. 
+*   **Tactile Deep Filtering:** Implemented rapid-slice filtering mechanisms to isolate traffic by Email, Path, Method, and HTTP Status Codes.
+
+### Phase 3: Administrative Control Tools
+*   **The Policy Sandbox:** Engineered a pure-simulation mock endpoint (`/admin/policies/simulate`) tied to a frontend terminal UI. Administrators can test hypothetical payload interceptions against the core RBAC engine without generating real HTTP traffic.
+*   **Global Kill Switches:** Finished the `UsersView` bulk operations, granting authorized security officers a one-click high-contrast button to instantly revoke all active JSON Web Tokens (JWTs) for a compromised identity via Redis.
 
 ---
 
@@ -100,7 +108,7 @@ zti/
 | **Phase 2** | Identity layer (OAuth + JWT) | ✅ Complete |
 | **Phase 3** | Policy engine (Redis + RBAC) | ✅ Complete |
 | **Phase 4** | Zero-trust networking + observability | ✅ Complete |
-| **Phase 5** | Admin dashboard (React) | ⬜ Not started |
+| **Phase 5** | Admin dashboard (React) | ✅ Complete |
 
 ---
 
@@ -356,3 +364,32 @@ make lint-proxy # Just the proxy
 ## 📜 License
 
 MIT
+
+---
+
+## 🔒 Google SSO Provisioning Guide (Production)
+
+To wire up the newly hardened Gatekeeper instance natively into your Google Workspace, you must supply the proxy with valid OAuth keys.
+
+### 1. Configure the Google Cloud Project
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new Project (or select an existing one).
+3. Navigate to **APIs & Services > OAuth consent screen**.
+   - Select **External** (or Internal if using a Workspace org).
+   - Fill in the required application details (App name, support email).
+   - Add scopes: `.../auth/userinfo.email`, `.../auth/userinfo.profile`, and `openid`.
+4. Navigate to **Credentials > Create Credentials > OAuth client ID**.
+   - Application type: **Web application**.
+   - Name: `Gatekeeper Proxy`.
+   - **Authorized redirect URIs:** `http://localhost:8000/auth/callback/google` (Or your production URL).
+
+### 2. Inject Keys into the Environment
+In your `infra/.env` file, populate the OAuth keys generated from Google:
+
+```env
+GK_GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
+GK_GOOGLE_CLIENT_SECRET=your-client-secret-here
+GK_GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback/google
+```
+
+The system will now securely issue encrypted JWT session cookies upon successful Google callback!

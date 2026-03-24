@@ -28,7 +28,7 @@ logger = structlog.get_logger()
 PUBLIC_ROUTES = frozenset(
     {
         "/login",
-        "/oauth/callback",
+        "/auth/callback/google",
         "/auth/dev-login",
         "/auth/logout",
         "/proxy/health",
@@ -40,8 +40,9 @@ PUBLIC_ROUTES = frozenset(
 
 # Prefixes that do NOT require authentication
 PUBLIC_PREFIXES = (
-    "/auth/",
     "/static/",
+    "/assets/",    
+    "/vite.svg",   
     "/docs",
     "/openapi.json",
     "/redoc",

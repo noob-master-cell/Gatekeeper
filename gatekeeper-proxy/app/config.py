@@ -8,8 +8,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Proxy settings — configurable via environment variables."""
 
-    # Backend target
+    # Backend targets
     backend_url: str = "http://localhost:8001"
+    control_plane_url: str = "http://localhost:8002"
 
     # Proxy server
     proxy_host: str = "0.0.0.0"
@@ -20,14 +21,14 @@ class Settings(BaseSettings):
     backend_read_timeout: float = 30.0
 
     # Connection pool
-    max_connections: int = 100
-    max_keepalive_connections: int = 20
+    max_connections: int = 200
+    max_keepalive_connections: int = 50
 
     # Logging
     log_level: str = "INFO"
 
-    # Dev mode
-    dev_mode: bool = True
+    # Dev mode (defaults to False for safety — enable explicitly for local dev)
+    dev_mode: bool = False
 
     # ─── Auth / OAuth ─────────────────────────────────────
     google_client_id: str = ""
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     # mTLS
     mtls_enabled: bool = False
     mtls_cert_dir: str = "/certs"
+
+    # Control-plane API key (inter-service auth)
+    cp_api_key: str = ""
 
     model_config = {"env_prefix": "GK_"}
 

@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Inter-service API key (required in production)
+    api_key: str = ""
+
+    # mTLS
+    mtls_enabled: bool = False
+    mtls_cert_dir: str = "/certs"
+
     model_config = {"env_prefix": "GK_CP_"}
 
 

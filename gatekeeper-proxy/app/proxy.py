@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from starlette.responses import Response
 
 from app.config import settings
+from app.mtls import create_mtls_ssl_context
 
 logger = structlog.get_logger()
 
@@ -23,7 +24,11 @@ async def get_client() -> httpx.AsyncClient:
     """Return a shared, connection-pooled httpx AsyncClient."""
     global _client  # noqa: PLW0603
     if _client is None or _client.is_closed:
+        # Load mTLS context if enabled
+        ssl_context = create_mtls_ssl_context() if settings.mtls_enabled else True
+        
         _client = httpx.AsyncClient(
+            verify=ssl_context,
             limits=httpx.Limits(
                 max_connections=settings.max_connections,
                 max_keepalive_connections=settings.max_keepalive_connections,
@@ -96,12 +101,26 @@ async def forward_request(request: Request) -> Response:
     # Build target URL
     path = request.url.path
     query = str(request.url.query)
-    target_url = f"{settings.backend_url}{path}"
+    
+    # Route all /admin/* requests to control plane
+    base_url = settings.backend_url
+    if path.startswith("/admin/"):
+        base_url = settings.control_plane_url
+        
+    if settings.mtls_enabled:
+        base_url = base_url.replace("http://", "https://")
+        
+    target_url = f"{base_url}{path}"
     if query:
         target_url = f"{target_url}?{query}"
 
     # Build headers
     headers = build_forwarded_headers(request)
+
+    # Inject API key for control-plane requests
+    if path.startswith("/admin/") and settings.cp_api_key:
+        headers["X-API-Key"] = settings.cp_api_key
+
     correlation_id = headers.get("X-Correlation-ID", "")
 
     log = logger.bind(
@@ -182,7 +201,15 @@ async def forward_request_streaming(request: Request) -> StreamingResponse:
 
     path = request.url.path
     query = str(request.url.query)
-    target_url = f"{settings.backend_url}{path}"
+    
+    base_url = settings.backend_url
+    if path.startswith("/admin/policies") or path.startswith("/admin/posture") or path.startswith("/admin/metrics"):
+        base_url = settings.control_plane_url
+
+    if settings.mtls_enabled:
+        base_url = base_url.replace("http://", "https://")
+
+    target_url = f"{base_url}{path}"
     if query:
         target_url = f"{target_url}?{query}"
 

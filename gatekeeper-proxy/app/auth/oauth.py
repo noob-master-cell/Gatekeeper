@@ -60,7 +60,7 @@ async def login(request: Request) -> RedirectResponse:
 # ─── OAuth Callback ───────────────────────────────────────────
 
 
-@router.get("/oauth/callback")
+@router.get("/auth/callback/google")
 async def oauth_callback(request: Request, code: str) -> Response:
     """Exchange Google OAuth authorization code for tokens.
 
@@ -121,11 +121,49 @@ async def oauth_callback(request: Request, code: str) -> Response:
 
         log.info("auth.oauth.success", email=email, google_id=google_id, name=name)
 
-        # Issue our JWT
+        # Upsert user in the control plane DB and fetch their real roles
+        roles = ["user"]  # fallback
+        try:
+            # Use mTLS context if enabled (control-plane requires it)
+            from app.mtls import create_mtls_ssl_context
+
+            cp_url = settings.control_plane_url
+            ssl_ctx = None
+            if settings.mtls_enabled:
+                ssl_ctx = create_mtls_ssl_context()
+                cp_url = cp_url.replace("http://", "https://")
+
+            async with httpx.AsyncClient(
+                timeout=5.0,
+                verify=ssl_ctx if ssl_ctx else True,
+            ) as cp_client:
+                # Build headers with API key if configured
+                cp_headers = {}
+                if settings.cp_api_key:
+                    cp_headers["X-API-Key"] = settings.cp_api_key
+
+                # Upsert user
+                upsert_resp = await cp_client.post(
+                    f"{cp_url}/admin/users",
+                    json={"email": email, "google_id": google_id, "name": name},
+                    headers=cp_headers,
+                )
+                if upsert_resp.status_code == 200:
+                    user_data = upsert_resp.json()
+                    db_roles = user_data.get("roles", [])
+                    if db_roles:
+                        roles = db_roles
+                    log.info("auth.roles_from_db", email=email, roles=roles)
+                else:
+                    log.warning("auth.upsert_failed", status=upsert_resp.status_code)
+        except Exception as cp_exc:
+            log.warning("auth.control_plane_unreachable", error=str(cp_exc))
+
+        # Issue our JWT with real roles
         access_token = create_access_token(
             user_id=google_id,
             email=email,
-            roles=["user"],  # Default role; will be enriched from DB later
+            roles=roles,
         )
 
         # Create Redis session for revocation support
@@ -135,7 +173,7 @@ async def oauth_callback(request: Request, code: str) -> Response:
                 jti=claims.jti,
                 user_id=google_id,
                 email=email,
-                roles=["user"],
+                roles=roles,
                 ttl_seconds=settings.jwt_expiry_minutes * 60,
             )
         except Exception as session_exc:
@@ -143,11 +181,12 @@ async def oauth_callback(request: Request, code: str) -> Response:
 
         # Set cookie and redirect to dashboard
         response = RedirectResponse(url="/", status_code=302)
+        is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         response.set_cookie(
             key="gatekeeper_token",
             value=access_token,
             httponly=True,
-            secure=not settings.dev_mode,
+            secure=is_secure,
             samesite="lax",
             max_age=settings.jwt_expiry_minutes * 60,
             path="/",

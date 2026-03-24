@@ -25,14 +25,22 @@ services:
       - "8000:8000"
     environment:
       - GK_BACKEND_URL=http://backend:8001
+      - GK_CONTROL_PLANE_URL=http://control-plane:8002
       - GK_LOG_LEVEL=DEBUG
-      - GK_DEV_MODE=true
+      - GK_DEV_MODE=false
+      - GK_DEV_LOGIN_ENABLED=false
       - GK_REDIS_URL=redis://redis:6379/0
       - GK_KEYS_DIR=/tmp/gatekeeper_keys
-      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_ENABLED=true
       - GK_MTLS_CERT_DIR=/certs
+      - GK_GOOGLE_CLIENT_ID=${GK_GOOGLE_CLIENT_ID}
+      - GK_GOOGLE_CLIENT_SECRET=${GK_GOOGLE_CLIENT_SECRET}
+      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI}
+      - GK_CP_API_KEY=${GK_CP_API_KEY:-dev-api-key-change-me}
     volumes:
-      - certs:/certs:ro
+      - ./certs:/certs:ro
+      - ../gatekeeper-dashboard/dist:/tmp/gatekeeper/public:ro
+      - proxy_keys:/tmp/gatekeeper_keys
     depends_on:
       backend:
         condition: service_healthy
@@ -48,14 +56,14 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8001:8001"
+    volumes:
+      - ./certs:/certs:ro
     environment:
       - LOG_LEVEL=DEBUG
-      - GK_MTLS_ENABLED=${GK_MTLS_ENABLED:-false}
+      - GK_MTLS_ENABLED=true
       - GK_MTLS_CERT_DIR=/certs
-    volumes:
-      - certs:/certs:ro
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
+      test: [ "CMD", "python", "-c", "import urllib.request,ssl; urllib.request.urlopen('https://localhost:8001/health',context=ssl._create_unverified_context())" ]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -70,10 +78,21 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8002:8002"
+    volumes:
+      - ./certs:/certs:ro
     environment:
       - GK_CP_DATABASE_URL=postgresql+asyncpg://gatekeeper:gatekeeper_dev@postgres:5432/gatekeeper
       - GK_CP_REDIS_URL=redis://redis:6379/0
       - GK_CP_LOG_LEVEL=DEBUG
+      - GK_CP_API_KEY=${GK_CP_API_KEY:-dev-api-key-change-me}
+      - GK_CP_MTLS_ENABLED=true
+      - GK_CP_MTLS_CERT_DIR=/certs
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request,ssl; urllib.request.urlopen('https://localhost:8002/health',context=ssl._create_unverified_context())" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,7 +139,7 @@ services:
 volumes:
   pg_data:
   redis_data:
-  certs:
+  proxy_keys:
 
 
 networks:
