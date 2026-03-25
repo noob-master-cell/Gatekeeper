@@ -30,7 +30,7 @@ Traditional enterprise security relies on **VPNs and perimeter firewalls** — o
 
 Google solved this internally with **BeyondCorp** — a zero-trust architecture where *every single request* is authenticated, authorized, and audited, regardless of network location. There is no "inside" or "outside" the network.
 
-**Gatekeeper is an open-source, self-hosted implementation of this exact principle.**
+**Gatekeeper is small levle implementation of this exact principle.**
 
 ---
 
