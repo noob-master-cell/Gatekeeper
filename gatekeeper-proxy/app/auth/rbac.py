@@ -25,6 +25,7 @@ logger = structlog.get_logger()
 # "ANY_AUTHENTICATED" means any valid token is sufficient.
 
 ANY_AUTHENTICATED = "__any_authenticated__"
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 ROUTE_POLICIES: list[tuple[str, list[str] | str]] = [
     # Admin routes — admin only
@@ -34,6 +35,12 @@ ROUTE_POLICIES: list[tuple[str, list[str] | str]] = [
     (r"^/api/hr(/.*)?$", ["hr", "admin"]),
     # Default — any authenticated user
     (r"^/.*$", ANY_AUTHENTICATED),
+]
+
+# Write-restriction map: pattern → roles allowed to write (others are read-only)
+# HR paths: only admin can mutate; hr role is read-only
+_WRITE_RESTRICTIONS: list[tuple[re.Pattern, list[str]]] = [
+    (re.compile(r"^/api/hr(/.*)?$"), ["admin"]),
 ]
 
 # Compiled regex cache
@@ -81,24 +88,33 @@ def _cache_set(path: str, user_roles: list[str], allowed: bool, reason: str) -> 
     _ACCESS_CACHE[key] = (allowed, reason, time.monotonic() + _CACHE_TTL)
 
 
-def check_route_access(path: str, user_roles: list[str]) -> tuple[bool, str]:
-    """Check if a user with given roles can access the specified path.
+def check_route_access(path: str, user_roles: list[str], method: str = "GET") -> tuple[bool, str]:
+    """Check if a user with given roles can access the specified path and method.
 
     Uses an in-memory TTL cache to avoid redundant regex evaluations.
 
     Args:
         path: The request path (e.g., "/api/hr/employees").
         user_roles: The user's role names (e.g., ["user", "hr"]).
+        method: The HTTP method (e.g., "GET", "POST"). Defaults to "GET".
 
     Returns:
         Tuple of (allowed: bool, reason: str).
     """
-    # Check cache first
+    # Check cache first (include method in cache key for write-restricted paths)
     cached = _cache_get(path, user_roles)
-    if cached is not None:
+    if cached is not None and method.upper() not in WRITE_METHODS:
         return cached
 
-    # Evaluate against compiled policies
+    # Check write restrictions before role policies
+    if method.upper() in WRITE_METHODS:
+        for pattern, write_roles in _WRITE_RESTRICTIONS:
+            if pattern.match(path):
+                if not (set(user_roles) & set(write_roles)):
+                    result = (False, "write_access_denied")
+                    return result
+
+    # Evaluate against compiled role policies
     for pattern, required_roles in _compiled_policies:
         if pattern.match(path):
             if required_roles == ANY_AUTHENTICATED:
@@ -110,7 +126,7 @@ def check_route_access(path: str, user_roles: list[str]) -> tuple[bool, str]:
             if isinstance(required_roles, list):
                 overlap = set(user_roles) & set(required_roles)
                 if overlap:
-                    result = (True, f"role_match:{','.join(overlap)}")
+                    result = (True, f"role_match:{','.join(sorted(overlap))}")
                     _cache_set(path, user_roles, *result)
                     return result
                 else:

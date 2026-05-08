@@ -347,7 +347,7 @@ async def simulate_policy(request: Request):
     method = data.get("method", "GET")
 
     from app.auth.rbac import check_route_access
-    rbac_allowed, rbac_reason = check_route_access(path, roles)
+    rbac_allowed, rbac_reason = check_route_access(path, roles, method)
 
     # Final decision starts with RBAC
     allowed = rbac_allowed

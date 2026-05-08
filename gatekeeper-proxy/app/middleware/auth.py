@@ -124,8 +124,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-        # Check RBAC permissions
-        allowed, reason = check_route_access(path, claims.roles)
+        # Check RBAC permissions (pass method for write-restriction enforcement)
+        allowed, reason = check_route_access(path, claims.roles, request.method)
         if not allowed:
             logger.warning(
                 "rbac.forbidden",
