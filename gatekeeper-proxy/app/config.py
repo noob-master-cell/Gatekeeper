@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    log_format: str = "console"  # "console" or "json"
 
     # Dev mode (defaults to False for safety — enable explicitly for local dev)
     dev_mode: bool = False
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     jwt_expiry_minutes: int = 60
     keys_dir: str = "/tmp/gatekeeper_keys"
 
+    # JWKS rotation
+    jwks_rotation_hours: int = 720  # Rotate keys every 30 days by default
+
     # Dev login bypass (only works when dev_mode=True)
     dev_login_enabled: bool = True
 
@@ -59,6 +63,16 @@ class Settings(BaseSettings):
 
     # Control-plane API key (inter-service auth)
     cp_api_key: str = ""
+
+    # ─── OPA (Open Policy Agent) ─────────────────────────
+    opa_enabled: bool = False
+    opa_url: str = "http://localhost:8181"
+    opa_policy_path: str = "v1/data/gatekeeper/authz"
+    opa_fail_open: bool = False  # Fail closed by default (deny on OPA error)
+
+    # ─── Observability ───────────────────────────────────
+    otel_endpoint: str = ""  # OTLP gRPC endpoint (e.g., http://otel-collector:4317)
+    environment: str = "development"
 
     model_config = {"env_prefix": "GK_"}
 

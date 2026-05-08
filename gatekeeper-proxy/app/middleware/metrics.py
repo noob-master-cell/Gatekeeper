@@ -4,6 +4,9 @@ Records:
   - Hourly success/blocked counters (for the 24 h graph)
   - Top requested paths    (ZINCRBY sorted set, daily)
   - Top blocked client IPs (ZINCRBY sorted set, daily)
+
+Note: This middleware is for Redis-based dashboard metrics.
+      Prometheus metrics are handled by PrometheusMiddleware in observability/.
 """
 
 from __future__ import annotations

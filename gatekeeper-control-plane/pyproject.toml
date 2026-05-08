@@ -1,6 +1,6 @@
 [project]
 name = "gatekeeper-control-plane"
-version = "0.1.0"
+version = "0.2.0"
 description = "RBAC models, migrations, and admin APIs for Gatekeeper"
 requires-python = ">=3.11"
 dependencies = [

@@ -1,7 +1,7 @@
 [project]
 name = "gatekeeper-proxy"
-version = "0.1.0"
-description = "Zero-trust reverse proxy with auth, RBAC, and audit logging"
+version = "0.2.0"
+description = "Zero-trust reverse proxy with auth, RBAC, OPA, and observability"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
@@ -13,14 +13,23 @@ dependencies = [
     "cryptography>=42.0.0",
     "python-multipart>=0.0.9",
     "redis[hiredis]>=5.0.0",
+    # Observability
+    "prometheus-client>=0.21.0",
+    "opentelemetry-api>=1.25.0",
+    "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
+    "opentelemetry-instrumentation-fastapi>=0.46b0",
+    "opentelemetry-instrumentation-httpx>=0.46b0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "httpx",
 ]
 
 [tool.ruff]
@@ -39,6 +48,14 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/observability/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 50
 
 [build-system]
 requires = ["setuptools>=75.0"]

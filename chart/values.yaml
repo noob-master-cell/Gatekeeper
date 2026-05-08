@@ -1,0 +1,122 @@
+# ──────────────────────────────────────────────────────────────
+# Gatekeeper Helm Chart — Default Values
+# ──────────────────────────────────────────────────────────────
+
+# Mode: "proxy" (standalone reverse proxy) or "ingress" (k8s ingress controller)
+mode: proxy
+
+# ─── Image ───────────────────────────────────────────────────
+image:
+  repository: ghcr.io/noob-master-cell/gatekeeper-proxy
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# ─── Replicas & Autoscaling ──────────────────────────────────
+replicaCount: 2
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ─── Resources ───────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# ─── Service ─────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 8000
+
+# ─── Ingress (when deployed behind an existing ingress) ──────
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: gatekeeper.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ─── Environment Variables ───────────────────────────────────
+env:
+  GK_LOG_LEVEL: INFO
+  GK_LOG_FORMAT: json
+  GK_DEV_MODE: "false"
+  GK_ENVIRONMENT: production
+
+# ─── Backend ─────────────────────────────────────────────────
+backend:
+  url: "http://backend:8001"
+
+# ─── Control Plane ───────────────────────────────────────────
+controlPlane:
+  url: "http://control-plane:8002"
+
+# ─── Redis ───────────────────────────────────────────────────
+redis:
+  # Set to true to deploy Redis as part of this chart
+  enabled: true
+  url: "redis://gatekeeper-redis:6379/0"
+
+# ─── OPA ─────────────────────────────────────────────────────
+opa:
+  enabled: false
+  url: "http://gatekeeper-opa:8181"
+  policyPath: "v1/data/gatekeeper/authz"
+  failOpen: false
+
+# ─── Observability ───────────────────────────────────────────
+observability:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  tracing:
+    enabled: false
+    otlpEndpoint: ""
+
+# ─── Security Context ───────────────────────────────────────
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 1000
+
+# ─── Health Checks ───────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /proxy/health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /proxy/health
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+# ─── Node Selection ─────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ─── Service Account ────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

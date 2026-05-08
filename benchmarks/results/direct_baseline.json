@@ -1,0 +1,28 @@
+{
+  "test": "direct-backend",
+  "scenario": "baseline",
+  "timestamp": "2026-05-09T02:54:39Z",
+  "vus": 100,
+  "duration": "60s",
+  "note": "Direct hit to gatekeeper-backend (no proxy, no auth). Establishes the ceiling for backend throughput.",
+  "metrics": {
+    "http_req_duration_p50_ms": 6.61,
+    "http_req_duration_p90_ms": 10.51,
+    "http_req_duration_p95_ms": 14.99,
+    "http_req_duration_avg_ms": 6.79,
+    "http_req_duration_min_ms": 0.288,
+    "http_req_duration_max_ms": 55.96,
+    "http_reqs_total": 354666,
+    "http_reqs_rate_per_sec": 5909.98,
+    "http_req_failed_rate": 0.0,
+    "checks_passed_rate": 1.0,
+    "data_received_mb": 165,
+    "data_sent_mb": 29
+  },
+  "environment": {
+    "host": "localhost",
+    "deployment": "docker-compose",
+    "machine": "darwin",
+    "backend": "gatekeeper-backend v0.2.0"
+  }
+}

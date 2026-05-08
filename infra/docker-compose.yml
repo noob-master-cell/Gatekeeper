@@ -1,22 +1,11 @@
 # ──────────────────────────────────────────────────────────────
-# Gatekeeper — Docker Compose (Full Stack)
+# Gatekeeper — Full Observability Stack
+# Proxy + Backend + Control Plane + Redis + PostgreSQL
+# + Prometheus + Grafana + OPA + Dummy Upstreams
 # ──────────────────────────────────────────────────────────────
 
 services:
-  # ── Admin Dashboard ────────────────────────────────────────
-  dashboard:
-    build:
-      context: ../gatekeeper-dashboard
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      proxy:
-        condition: service_healthy
-    networks:
-      - gatekeeper
-
-  # ── Reverse Proxy ──────────────────────────────────────────
+  # ── Reverse Proxy (Gatekeeper) ─────────────────────────────
   proxy:
     build:
       context: ../gatekeeper-proxy
@@ -27,47 +16,76 @@ services:
       - GK_BACKEND_URL=http://backend:8001
       - GK_CONTROL_PLANE_URL=http://control-plane:8002
       - GK_LOG_LEVEL=DEBUG
-      - GK_DEV_MODE=false
-      - GK_DEV_LOGIN_ENABLED=false
+      - GK_LOG_FORMAT=json
+      - GK_DEV_MODE=true
+      - GK_DEV_LOGIN_ENABLED=true
       - GK_REDIS_URL=redis://redis:6379/0
       - GK_KEYS_DIR=/tmp/gatekeeper_keys
-      - GK_MTLS_ENABLED=true
-      - GK_MTLS_CERT_DIR=/certs
-      - GK_GOOGLE_CLIENT_ID=${GK_GOOGLE_CLIENT_ID}
-      - GK_GOOGLE_CLIENT_SECRET=${GK_GOOGLE_CLIENT_SECRET}
-      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI}
+      - GK_MTLS_ENABLED=false
+      - GK_GOOGLE_CLIENT_ID=${GK_GOOGLE_CLIENT_ID:-}
+      - GK_GOOGLE_CLIENT_SECRET=${GK_GOOGLE_CLIENT_SECRET:-}
+      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI:-http://localhost:8000/oauth/callback}
       - GK_CP_API_KEY=${GK_CP_API_KEY:-dev-api-key-change-me}
+      # OPA
+      - GK_OPA_ENABLED=true
+      - GK_OPA_URL=http://opa:8181
+      - GK_OPA_POLICY_PATH=v1/data/gatekeeper/authz
+      - GK_OPA_FAIL_OPEN=true
+      # OpenTelemetry
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=gatekeeper-proxy
+      - GK_ENVIRONMENT=development
     volumes:
-      - ./certs:/certs:ro
-      - ../gatekeeper-dashboard/dist:/tmp/gatekeeper/public:ro
       - proxy_keys:/tmp/gatekeeper_keys
     depends_on:
       backend:
         condition: service_healthy
       redis:
         condition: service_healthy
+      opa:
+        condition: service_started
     networks:
       - gatekeeper
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/proxy/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
-  # ── Dummy Backend ──────────────────────────────────────────
+  # ── Backend (dummy upstream) ───────────────────────────────
   backend:
     build:
       context: ../gatekeeper-backend
       dockerfile: Dockerfile
     ports:
       - "8001:8001"
-    volumes:
-      - ./certs:/certs:ro
     environment:
       - LOG_LEVEL=DEBUG
-      - GK_MTLS_ENABLED=true
-      - GK_MTLS_CERT_DIR=/certs
+      - GK_MTLS_ENABLED=false
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request,ssl; urllib.request.urlopen('https://localhost:8001/health',context=ssl._create_unverified_context())" ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 5s
       timeout: 3s
       retries: 3
       start_period: 5s
+    networks:
+      - gatekeeper
+
+  # ── Dummy Upstream 1 (echo server) ─────────────────────────
+  upstream-echo:
+    image: ealen/echo-server:0.9.2
+    ports:
+      - "8010:80"
+    environment:
+      - PORT=80
+    networks:
+      - gatekeeper
+
+  # ── Dummy Upstream 2 (httpbin) ─────────────────────────────
+  upstream-httpbin:
+    image: kennethreitz/httpbin:latest
+    ports:
+      - "8011:80"
     networks:
       - gatekeeper
 
@@ -78,17 +96,14 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8002:8002"
-    volumes:
-      - ./certs:/certs:ro
     environment:
       - GK_CP_DATABASE_URL=postgresql+asyncpg://gatekeeper:gatekeeper_dev@postgres:5432/gatekeeper
       - GK_CP_REDIS_URL=redis://redis:6379/0
       - GK_CP_LOG_LEVEL=DEBUG
       - GK_CP_API_KEY=${GK_CP_API_KEY:-dev-api-key-change-me}
-      - GK_CP_MTLS_ENABLED=true
-      - GK_CP_MTLS_CERT_DIR=/certs
+      - GK_CP_MTLS_ENABLED=false
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request,ssl; urllib.request.urlopen('https://localhost:8002/health',context=ssl._create_unverified_context())" ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -113,7 +128,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U gatekeeper" ]
+      test: ["CMD-SHELL", "pg_isready -U gatekeeper"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -129,10 +144,73 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 3
+    networks:
+      - gatekeeper
+
+  # ── OPA (Open Policy Agent) ────────────────────────────────
+  opa:
+    image: openpolicyagent/opa:0.68.0-static
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "/policies"
+    volumes:
+      - ../policies:/policies:ro
+    networks:
+      - gatekeeper
+
+  # ── Prometheus ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - proxy
+    networks:
+      - gatekeeper
+
+  # ── Grafana ────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=gatekeeper
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - gatekeeper
+
+  # ── OpenTelemetry Collector ────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Metrics
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
     networks:
       - gatekeeper
 
@@ -140,7 +218,8 @@ volumes:
   pg_data:
   redis_data:
   proxy_keys:
-
+  prometheus_data:
+  grafana_data:
 
 networks:
   gatekeeper:

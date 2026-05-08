@@ -1,52 +1,53 @@
-"""Gatekeeper Proxy — Zero-trust reverse proxy application."""
+"""Gatekeeper Proxy — Zero-trust reverse proxy application.
+
+Middleware stack (outermost runs first):
+  Security Headers → CORS → Correlation ID → Prometheus → Logging →
+  Rate Limiting → CSRF → Device Posture → Auth (JWT + API keys + RBAC + OPA)
+"""
 
 from __future__ import annotations
 
+import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.auth.keys import get_jwks, initialize_keys
 from app.auth.oauth import router as auth_router
-from app.auth.sessions import close_redis, init_redis
+from app.auth.rbac import sync_policies
+from app.auth.sessions import close_redis, get_redis, init_redis
 from app.config import settings
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
+from app.middleware.csrf import CSRFMiddleware
 from app.middleware.logging import RequestLoggingMiddleware
-from app.middleware.metrics import MetricsMiddleware
-from app.middleware.posture import DevicePostureMiddleware
+from app.middleware.posture import DevicePostureMiddleware, sync_posture_rules
+from app.middleware.ratelimit import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.observability.logging_config import configure_logging
+from app.observability.prometheus_metrics import PrometheusMiddleware, get_metrics_response
+from app.observability.tracing import init_tracing, instrument_fastapi, instrument_httpx
 from app.proxy import close_client, forward_request
+
+# ─── Version ─────────────────────────────────────────────────
+
+__version__ = "0.2.0"
 
 # ─── Structured logging setup ────────────────────────────────
 
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.dev.ConsoleRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(0),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-    cache_logger_on_first_use=True,
-)
-
+configure_logging()
 logger = structlog.get_logger()
 
 
 # ─── App lifecycle ────────────────────────────────────────────
 
-import asyncio
-from app.auth.rbac import sync_policies
-from app.auth.sessions import get_redis
-from app.middleware.posture import sync_posture_rules
 
-async def poll_policies():
+async def poll_policies() -> None:
     """Periodically fetch RBAC and Posture policies from Redis."""
     while True:
         try:
@@ -61,7 +62,11 @@ async def poll_policies():
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle — startup and shutdown."""
-    logger.info("proxy.starting", message="Gatekeeper Proxy is starting")
+    logger.info("proxy.starting", version=__version__)
+
+    # Initialize OpenTelemetry tracing
+    init_tracing(service_name="gatekeeper-proxy")
+    instrument_httpx()
 
     # Initialize RSA keys for JWT signing
     initialize_keys()
@@ -82,33 +87,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_redis()
     await close_client()
 
+    # Close OPA client if initialized
+    try:
+        from app.auth.opa import close_opa_client
+        await close_opa_client()
+    except Exception:
+        pass
+
 
 # ─── FastAPI application ──────────────────────────────────────
 
 app = FastAPI(
     title="Gatekeeper Proxy",
-    description="Zero-trust reverse proxy with authentication, RBAC, and audit logging.",
-    version="0.4.0",
+    description="Zero-trust reverse proxy with authentication, RBAC, OPA, and observability.",
+    version=__version__,
     lifespan=lifespan,
 )
 
-# Add middleware (order matters: outermost middleware runs first)
-# 1. Security Headers (adds browser security headers to all responses)
-# 2. CORS (handles preflight and cross-origin requests)
-# 3. Correlation ID (every request gets a unique ID)
-# 4. Logging (logs every request with correlation ID)
-# 5. Rate Limiting (blocks excessive requests early)
-# 6. Metrics (records success/failure counts)
-# 7. Device Posture (blocks bad IPs/UAs before auth)
-# 8. Auth (enforces JWT + Redis sessions + RBAC)
+# Instrument FastAPI with OpenTelemetry
+instrument_fastapi(app)
+
+# ─── Middleware stack (order matters: outermost middleware runs first) ──
+# 1. Security Headers — adds HSTS, CSP, X-Frame-Options to all responses
+# 2. CORS — handles preflight and cross-origin requests
+# 3. Correlation ID — every request gets a unique ID
+# 4. Prometheus — collects latency, counts, active connections
+# 5. Logging — structured request logging with audit trail
+# 6. Rate Limiting — token bucket per IP + per API key
+# 7. CSRF — validates Origin header on state-changing requests
+# 8. Device Posture — blocks bad IPs/UAs before auth
+# 9. Auth — JWT + API keys + Redis sessions + RBAC + OPA
+
 app.add_middleware(AuthMiddleware)
-from app.middleware.csrf import CSRFMiddleware
-app.add_middleware(CSRFMiddleware)
 app.add_middleware(DevicePostureMiddleware)
-app.add_middleware(MetricsMiddleware)
-from app.middleware.ratelimit import RateLimitMiddleware
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(PrometheusMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
 from starlette.middleware.cors import CORSMiddleware
@@ -121,14 +136,13 @@ app.add_middleware(
     expose_headers=["X-Correlation-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 
-from app.middleware.security_headers import SecurityHeadersMiddleware
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount auth routes
 app.include_router(auth_router)
 
 
-# ─── Health check (proxy's own health) ────────────────────────
+# ─── Health check ─────────────────────────────────────────────
 
 
 @app.get("/proxy/health")
@@ -137,9 +151,18 @@ async def proxy_health() -> dict:
     return {
         "status": "ok",
         "service": "gatekeeper-proxy",
-        "version": "0.4.0",
+        "version": __version__,
         "timestamp": datetime.now(UTC).isoformat(),
     }
+
+
+# ─── Prometheus metrics endpoint ─────────────────────────────
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus text-format metrics endpoint."""
+    return get_metrics_response()
 
 
 # ─── JWKS endpoint ───────────────────────────────────────────
@@ -151,7 +174,7 @@ async def jwks_endpoint() -> JSONResponse:
     return JSONResponse(content=get_jwks())
 
 
-# ─── Admin session management (proxy-side) ────────────────────
+# ─── Admin session management ────────────────────────────────
 
 
 @app.get("/admin/sessions")
@@ -205,7 +228,46 @@ async def delete_session_endpoint(jti: str, request: Request) -> JSONResponse:
     )
 
 
-# ─── Audit log API ────────────────────────────────────────────
+# ─── API key management ─────────────────────────────────────
+
+
+@app.post("/admin/api-keys")
+async def create_api_key_endpoint(request: Request) -> JSONResponse:
+    """Create a new API key."""
+    from app.auth.api_keys import create_api_key
+
+    body = await request.json()
+    result = await create_api_key(
+        name=body.get("name", "Unnamed Key"),
+        owner=body.get("owner", "admin"),
+        roles=body.get("roles", ["user"]),
+        rate_limit=body.get("rate_limit", 1000),
+    )
+    return JSONResponse(content=result, status_code=201)
+
+
+@app.get("/admin/api-keys")
+async def list_api_keys_endpoint(request: Request) -> JSONResponse:
+    """List all API keys."""
+    from app.auth.api_keys import list_api_keys
+
+    owner = request.query_params.get("owner")
+    keys = await list_api_keys(owner=owner)
+    return JSONResponse(content={"data": keys, "count": len(keys)})
+
+
+@app.delete("/admin/api-keys/{key_hash}")
+async def revoke_api_key_endpoint(key_hash: str, request: Request) -> JSONResponse:
+    """Revoke an API key."""
+    from app.auth.api_keys import revoke_api_key
+
+    success = await revoke_api_key(key_hash)
+    if success:
+        return JSONResponse(content={"revoked": True})
+    return JSONResponse(status_code=404, content={"error": "API key not found"})
+
+
+# ─── Audit log API ───────────────────────────────────────────
 
 
 @app.get("/admin/audit-logs")
@@ -233,31 +295,29 @@ async def list_audit_logs(request: Request) -> JSONResponse:
             entries = await r.xrevrange("audit:log", max=current_cursor, min="-", count=batch_size)
             if not entries:
                 break
-                
+
             for entry_id, fields in entries:
-                # Redis xrevrange is inclusive of max, so skip the cursor if we explicitly set it
                 if cursor != "+" and entry_id == current_cursor and current_cursor == cursor:
                     continue
-                    
+
                 data = json.loads(fields["data"])
-                
+
                 # Apply optional filters
                 if email_filter and email_filter not in str(data.get("email", "")).lower(): continue
                 if path_filter and path_filter not in str(data.get("path", "")).lower(): continue
                 if method_filter and data.get("method") != method_filter: continue
                 if status_filter and str(data.get("status_code")) != status_filter: continue
-                
+
                 data["id"] = entry_id
                 logs.append(data)
                 current_cursor = entry_id
-                
+
                 if len(logs) >= count:
                     break
-            
+
             if len(logs) >= count:
                 break
-                
-            # If we only fetched entries we've already seen, break to avoid infinite loop
+
             last_entry_id = entries[-1][0]
             if current_cursor == last_entry_id and len(entries) == 1:
                 break
@@ -274,25 +334,8 @@ async def list_audit_logs(request: Request) -> JSONResponse:
         )
 
 
-# ─── Prometheus-style metrics ─────────────────────────────────
+# ─── RBAC Policy Simulator Sandbox ──────────────────────────
 
-
-@app.get("/metrics")
-async def metrics() -> JSONResponse:
-    """Basic operational metrics (Prometheus-compatible JSON)."""
-    import os
-
-    return JSONResponse(
-        content={
-            "service": "gatekeeper-proxy",
-            "version": "0.4.0",
-            "uptime": "running",
-            "python_version": os.sys.version,
-        }
-    )
-
-
-# ─── RBAC Policy Simulator Sandbox ────────────────────────────
 
 @app.post("/admin/policies/simulate")
 async def simulate_policy(request: Request):
@@ -301,20 +344,39 @@ async def simulate_policy(request: Request):
     path = data.get("path", "/")
     roles = data.get("roles", ["user"])
     email = data.get("email", "sandbox@test.local")
-    
+
     from app.auth.rbac import check_route_access
     allowed, reason = check_route_access(path, roles)
-    
-    return JSONResponse(content={
+
+    result = {
         "allowed": allowed,
         "reason": reason,
         "email": email,
         "simulated_roles": roles,
         "path": path,
-    })
+    }
+
+    # Also simulate OPA if enabled
+    if settings.opa_enabled:
+        try:
+            from app.auth.opa import evaluate_policy
+            opa_allowed, opa_reason = await evaluate_policy(
+                method=data.get("method", "GET"),
+                path=path,
+                user_id=f"simulator:{email}",
+                email=email,
+                roles=roles,
+                client_ip="127.0.0.1",
+            )
+            result["opa_allowed"] = opa_allowed
+            result["opa_reason"] = opa_reason
+        except Exception as exc:
+            result["opa_error"] = str(exc)
+
+    return JSONResponse(content=result)
 
 
-# ─── Catch-all reverse proxy route ───────────────────────────
+# ─── Catch-all reverse proxy route ──────────────────────────
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
@@ -323,28 +385,24 @@ async def proxy_route_api(request: Request, path: str):
     """Forward /api/* and /admin/* requests to the backend targets."""
     return await forward_request(request)
 
-import os
+
 from fastapi.staticfiles import StaticFiles
 from fastapi import HTTPException
 from starlette.responses import FileResponse
 
 public_dir = "/tmp/gatekeeper/public"
 if os.path.exists(public_dir):
-    # Serve the React SPA. This automatically serves index.html at /
     app.mount("/", StaticFiles(directory=public_dir, html=True), name="public")
 
-    # Add a global 404 handler to support React Router SPA navigation
     @app.exception_handler(404)
     async def spa_not_found(request: Request, exc: HTTPException):
-        # Don't serve index.html for API missing endpoints
-        if request.url.path.startswith("/api/") or request.url.path.startswith("/admin/") or request.url.path.startswith("/auth/"):
+        if request.url.path.startswith(("/api/", "/admin/", "/auth/")):
             return JSONResponse(status_code=404, content={"error": "Not Found"})
         index_path = os.path.join(public_dir, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
         return JSONResponse(status_code=404, content={"error": "Not Found"})
 else:
-    # Fallback catch-all if static files aren't built
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
     async def proxy_route_catchall(request: Request, path: str):
         return await forward_request(request)

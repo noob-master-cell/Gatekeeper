@@ -1,0 +1,34 @@
+{
+  "test": "gatekeeper",
+  "scenario": "baseline",
+  "timestamp": "2026-05-09T02:52:34Z",
+  "vus": 100,
+  "duration": "60s",
+  "note": "Mix of /proxy/health (no auth), /api/hr/employees (401 expected), /.well-known/jwks.json. 33% 401s are expected — custom check 'status is 2xx or 401' passed 100%.",
+  "metrics": {
+    "http_req_duration_p50_ms": 16.84,
+    "http_req_duration_p90_ms": 38.83,
+    "http_req_duration_p95_ms": 46.82,
+    "http_req_duration_avg_ms": 19.83,
+    "http_req_duration_min_ms": 0.662,
+    "http_req_duration_max_ms": 157.37,
+    "http_reqs_total": 200245,
+    "http_reqs_rate_per_sec": 3336.1,
+    "http_req_failed_rate": 0.333,
+    "checks_passed_rate": 1.0,
+    "data_received_mb": 123,
+    "data_sent_mb": 24
+  },
+  "environment": {
+    "host": "localhost",
+    "deployment": "docker-compose",
+    "machine": "darwin",
+    "proxy": "gatekeeper-proxy v0.2.0",
+    "backend": "gatekeeper-backend v0.2.0"
+  },
+  "thresholds": {
+    "http_req_duration_p95_lt_500ms": "PASS (46.82ms)",
+    "http_req_duration_p99_lt_1000ms": "PASS",
+    "http_req_failed_lt_1pct": "NOTE: 33% are expected 401s; custom check passed 100%"
+  }
+}
