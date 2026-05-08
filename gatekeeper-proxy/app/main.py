@@ -339,29 +339,35 @@ async def list_audit_logs(request: Request) -> JSONResponse:
 
 @app.post("/admin/policies/simulate")
 async def simulate_policy(request: Request):
-    """Simulate exactly how the RBAC engine will handle a hypothetical request."""
+    """Simulate how the full auth stack (RBAC + OPA) handles a hypothetical request."""
     data = await request.json()
     path = data.get("path", "/")
     roles = data.get("roles", ["user"])
     email = data.get("email", "sandbox@test.local")
+    method = data.get("method", "GET")
 
     from app.auth.rbac import check_route_access
-    allowed, reason = check_route_access(path, roles)
+    rbac_allowed, rbac_reason = check_route_access(path, roles)
+
+    # Final decision starts with RBAC
+    allowed = rbac_allowed
+    reason = rbac_reason
 
     result = {
-        "allowed": allowed,
-        "reason": reason,
         "email": email,
         "simulated_roles": roles,
         "path": path,
+        "method": method,
+        "rbac_allowed": rbac_allowed,
+        "rbac_reason": rbac_reason,
     }
 
-    # Also simulate OPA if enabled
+    # OPA is the second gate — both must pass (AND logic, matching production)
     if settings.opa_enabled:
         try:
             from app.auth.opa import evaluate_policy
             opa_allowed, opa_reason = await evaluate_policy(
-                method=data.get("method", "GET"),
+                method=method,
                 path=path,
                 user_id=f"simulator:{email}",
                 email=email,
@@ -370,8 +376,16 @@ async def simulate_policy(request: Request):
             )
             result["opa_allowed"] = opa_allowed
             result["opa_reason"] = opa_reason
+
+            # OPA denial overrides RBAC allow
+            if not opa_allowed:
+                allowed = False
+                reason = opa_reason
         except Exception as exc:
             result["opa_error"] = str(exc)
+
+    result["allowed"] = allowed
+    result["reason"] = reason
 
     return JSONResponse(content=result)
 
