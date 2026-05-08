@@ -24,6 +24,7 @@ export default function PoliciesView() {
     const [simEmail, setSimEmail] = useState('test@user.com');
     const [simRoles, setSimRoles] = useState('hr');
     const [simPath, setSimPath] = useState('/api/hr/salary');
+    const [simMethod, setSimMethod] = useState('GET');
     const [simResult, setSimResult] = useState<PolicySimulationResponse | null>(null);
     const [simulating, setSimulating] = useState(false);
 
@@ -36,7 +37,7 @@ export default function PoliciesView() {
                 email: simEmail,
                 roles: simRoles.split(',').map(r => r.trim()).filter(Boolean),
                 path: simPath,
-                method: 'GET'
+                method: simMethod
             });
             setSimResult(res);
         } catch (err: any) {
@@ -217,9 +218,17 @@ export default function PoliciesView() {
                                         <input required value={simRoles} onChange={e => setSimRoles(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono" />
                                     </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-mono text-gray-400 uppercase">Target Path</label>
-                                    <input required value={simPath} onChange={e => setSimPath(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-brand-400 font-bold tracking-wider focus:border-brand-500 outline-none font-mono" placeholder="e.g. /api/admin" />
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-xs font-mono text-gray-400 uppercase">Target Path</label>
+                                        <input required value={simPath} onChange={e => setSimPath(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-brand-400 font-bold tracking-wider focus:border-brand-500 outline-none font-mono" placeholder="e.g. /api/admin" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-mono text-gray-400 uppercase">Method</label>
+                                        <select value={simMethod} onChange={e => setSimMethod(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono">
+                                            {['GET','POST','PUT','PATCH','DELETE'].map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                                 <Button type="submit" variant="secondary" isLoading={simulating} className="w-full border-2 border-surface-700 hover:bg-surface-700 text-white shadow-te">
                                     EXECUTE_SIMULATION
@@ -243,7 +252,7 @@ export default function PoliciesView() {
                                     </div>
                                     <div className="text-gray-400 tracking-wider">
                                         <span className="text-brand-500 opacity-70">USER |</span> <span className="text-white">{simResult.email}</span> [{simResult.simulated_roles.join(', ')}]<br/>
-                                        <span className="text-brand-500 opacity-70">PATH |</span> <span className="text-white">{simResult.path}</span><br/>
+                                        <span className="text-brand-500 opacity-70">REQ  |</span> <span className="text-yellow-400">{simMethod}</span> <span className="text-white">{simResult.path}</span><br/>
                                         <span className="text-brand-500 opacity-70">RULE |</span> <span className={simResult.allowed ? "text-emerald-400" : "text-red-400"}>{simResult.reason}</span>
                                     </div>
                                 </div>
