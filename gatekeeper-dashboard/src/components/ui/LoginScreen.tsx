@@ -1,9 +1,13 @@
-import { ShieldCheck, LogIn, Lock, Fingerprint, Eye } from 'lucide-react';
+import { ShieldCheck, LogIn, Lock, Fingerprint, Eye, Terminal } from 'lucide-react';
 import { Button } from './Button';
 
 export function LoginScreen() {
     const handleLogin = () => {
         window.location.href = '/login';
+    };
+
+    const handleDevLogin = () => {
+        window.location.href = '/auth/dev-login';
     };
 
     return (
@@ -73,6 +77,22 @@ export function LoginScreen() {
                             >
                                 <LogIn className="h-5 w-5" />
                                 Sign In with Google
+                            </Button>
+
+                            <div className="flex items-center gap-3 mt-3">
+                                <div className="flex-1 h-px bg-surface-700" />
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-surface-600">or</span>
+                                <div className="flex-1 h-px bg-surface-700" />
+                            </div>
+
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="w-full gap-3 text-sm mt-3"
+                                onClick={handleDevLogin}
+                            >
+                                <Terminal className="h-5 w-5" />
+                                Developer Login
                             </Button>
                         </div>
 

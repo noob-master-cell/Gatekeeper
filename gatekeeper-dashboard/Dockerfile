@@ -20,6 +20,9 @@ RUN mkdir -p /etc/nginx/templates && printf 'server {\n\
   proxy_set_header X-Real-IP $remote_addr;\n\
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
   proxy_set_header X-Forwarded-Proto $scheme;\n\
+  proxy_connect_timeout 5s;\n\
+  proxy_read_timeout 15s;\n\
+  proxy_send_timeout 15s;\n\
   location / {\n\
     root /usr/share/nginx/html;\n\
     try_files $uri $uri/ /index.html;\n\

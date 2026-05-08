@@ -23,14 +23,16 @@ export default function App() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/auth/me', { credentials: 'include' })
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        fetch('/auth/me', { credentials: 'include', signal: controller.signal })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
                 if (data && data.email) setUser(data);
                 else setUser(null);
             })
             .catch(() => setUser(null))
-            .finally(() => setLoading(false));
+            .finally(() => { clearTimeout(timeout); setLoading(false); });
     }, []);
 
     if (loading) {
