@@ -51,9 +51,13 @@ RUN mkdir -p /tmp/gatekeeper_keys && chown gatekeeper:gatekeeper /tmp/gatekeeper
 
 USER gatekeeper
 
-EXPOSE ${PORT:-8000}
+# Hardcode 8000 — Railway detects this from ENV PORT and routes accordingly.
+# Set PORT=8000 in Railway Variables to guarantee internal networking works
+# at proxy.railway.internal:8000
+ENV PORT=8000
+EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-    CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",\"8000\")}/proxy/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/proxy/health')"
 
-CMD sh -c "python -c 'from app.auth.keys import initialize_keys; initialize_keys()' && uvicorn app.main:app --host :: --port ${PORT:-8000} --workers 4"
+CMD ["sh", "-c", "python -c 'from app.auth.keys import initialize_keys; initialize_keys()' && uvicorn app.main:app --host :: --port 8000 --workers 4"]
