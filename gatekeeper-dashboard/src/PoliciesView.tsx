@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldAlert, Plus, Trash2, Shield, Globe, Code2, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { ShieldAlert, Plus, Trash2, Shield, Globe, Code2, RefreshCw, CheckCircle, XCircle, X, Terminal } from 'lucide-react';
 import { fetchPolicies, createPolicy, deletePolicy, simulatePolicy, fetchOpaPolicy, pushOpaPolicy, type Policy, type PolicySimulationResponse } from './api';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
-import { Card, CardContent } from './components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 import { Skeleton } from './components/ui/Skeleton';
+
+const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400';
+const selectCls = inputCls;
 
 export default function PoliciesView() {
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    // Basic mock form state for new policy (could be expanded to a real modal)
     const [isAdding, setIsAdding] = useState(false);
     const [newPolicyName, setNewPolicyName] = useState('');
     const [newPolicyPattern, setNewPolicyPattern] = useState('');
@@ -20,7 +21,6 @@ export default function PoliciesView() {
     const [newPolicyRoles, setNewPolicyRoles] = useState('admin,hr');
     const [newPolicyAnyAuth, setNewPolicyAnyAuth] = useState(false);
 
-    // Simulator State
     const [simEmail, setSimEmail] = useState('test@user.com');
     const [simRoles, setSimRoles] = useState('hr');
     const [simPath, setSimPath] = useState('/api/hr/salary');
@@ -28,26 +28,24 @@ export default function PoliciesView() {
     const [simResult, setSimResult] = useState<PolicySimulationResponse | null>(null);
     const [simulating, setSimulating] = useState(false);
 
-    // OPA hot-reload state
-    const [opaPolicy, setOpaPolicy] = useState<string>('');
+    const [opaPolicy, setOpaPolicy] = useState('');
     const [opaSaving, setOpaSaving] = useState(false);
     const [opaStatus, setOpaStatus] = useState<{ ok: boolean; message: string } | null>(null);
     const [opaLoading, setOpaLoading] = useState(false);
 
     const loadOpaPolicy = async () => {
         setOpaLoading(true);
-        const policy = await fetchOpaPolicy();
-        if (policy !== null) setOpaPolicy(policy);
+        const p = await fetchOpaPolicy();
+        if (p !== null) setOpaPolicy(p);
         setOpaLoading(false);
     };
 
     const handleOpaDeploy = async (e: React.FormEvent) => {
         e.preventDefault();
-        setOpaSaving(true);
-        setOpaStatus(null);
+        setOpaSaving(true); setOpaStatus(null);
         try {
             const result = await pushOpaPolicy(opaPolicy);
-            setOpaStatus({ ok: result.pushed, message: result.reason || (result.pushed ? 'Policy deployed' : 'Deploy failed') });
+            setOpaStatus({ ok: result.pushed, message: result.reason || (result.pushed ? 'Deployed successfully' : 'Deploy failed') });
         } catch (err: any) {
             setOpaStatus({ ok: false, message: err.message || 'Deploy failed' });
         } finally {
@@ -58,78 +56,40 @@ export default function PoliciesView() {
     const handleSimulate = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            setSimulating(true);
-            setSimResult(null);
-            const res = await simulatePolicy({
-                email: simEmail,
-                roles: simRoles.split(',').map(r => r.trim()).filter(Boolean),
-                path: simPath,
-                method: simMethod
-            });
-            setSimResult(res);
-        } catch (err: any) {
-            alert(err.message || 'Simulation failed');
-        } finally {
-            setSimulating(false);
-        }
+            setSimulating(true); setSimResult(null);
+            setSimResult(await simulatePolicy({ email: simEmail, roles: simRoles.split(',').map(r => r.trim()).filter(Boolean), path: simPath, method: simMethod }));
+        } catch (err: any) { alert(err.message || 'Simulation failed'); }
+        finally { setSimulating(false); }
     };
 
     const loadPolicies = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const data = await fetchPolicies();
-            setPolicies(data);
-        } catch (err: any) {
-            setError(err.message || 'Failed to fetch policies');
-        } finally {
-            setLoading(false);
-        }
+        try { setLoading(true); setError(null); setPolicies(await fetchPolicies()); }
+        catch (err: any) { setError(err.message || 'Failed to fetch policies'); }
+        finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        loadPolicies();
-    }, []);
+    useEffect(() => { loadPolicies(); }, []);
 
     const handleDelete = async (name: string) => {
-        if (!window.confirm(`Are you sure you want to delete policy '${name}'?`)) return;
-        try {
-            await deletePolicy(name);
-            await loadPolicies();
-        } catch (err: any) {
-            alert(err.message || 'Failed to delete policy');
-        }
+        if (!window.confirm(`Delete policy '${name}'?`)) return;
+        try { await deletePolicy(name); await loadPolicies(); }
+        catch (err: any) { alert(err.message || 'Delete failed'); }
     };
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await createPolicy({
-                name: newPolicyName,
-                pattern: newPolicyPattern,
-                priority: parseInt(newPolicyPriority, 10),
-                allow_any_authenticated: newPolicyAnyAuth,
-                roles: newPolicyAnyAuth ? [] : newPolicyRoles.split(',').map(r => r.trim()).filter(Boolean),
-                is_active: true
-            });
-            setIsAdding(false);
-            setNewPolicyName('');
-            setNewPolicyPattern('');
-            setNewPolicyAnyAuth(false);
+            await createPolicy({ name: newPolicyName, pattern: newPolicyPattern, priority: parseInt(newPolicyPriority, 10), allow_any_authenticated: newPolicyAnyAuth, roles: newPolicyAnyAuth ? [] : newPolicyRoles.split(',').map(r => r.trim()).filter(Boolean), is_active: true });
+            setIsAdding(false); setNewPolicyName(''); setNewPolicyPattern(''); setNewPolicyAnyAuth(false);
             await loadPolicies();
-        } catch (err: any) {
-            alert(err.message || 'Failed to create policy');
-        }
+        } catch (err: any) { alert(err.message || 'Create failed'); }
     };
 
     if (loading && policies.length === 0) {
         return (
             <PageLayout>
-                <PageHeader title="Access Policies" description="Manage route-level RBAC rules." />
-                <div className="space-y-4">
-                    <Skeleton className="h-[200px] w-full" />
-                    <Skeleton className="h-[200px] w-full" />
-                </div>
+                <PageHeader title="Policies" description="Route-level RBAC rules" />
+                <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
             </PageLayout>
         );
     }
@@ -138,285 +98,197 @@ export default function PoliciesView() {
         <PageLayout>
             <PageHeader
                 title="Access Policies"
-                description="Manage the zero-trust route policies and role requirements."
+                description="Manage zero-trust route policies and role requirements"
                 action={
-                    <Button onClick={() => setIsAdding(!isAdding)} variant={isAdding ? 'default' : 'secondary'}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        {isAdding ? 'Cancel' : 'New Policy'}
+                    <Button size="sm" variant={isAdding ? 'secondary' : 'default'} onClick={() => setIsAdding(!isAdding)}>
+                        {isAdding ? <><X className="mr-1.5 h-4 w-4" />Cancel</> : <><Plus className="mr-1.5 h-4 w-4" />New Policy</>}
                     </Button>
                 }
             />
 
-            {error && (
-                <div className="rounded-md bg-red-500/10 p-4 border border-red-500/20 mb-6">
-                    <p className="text-sm text-red-500">{error}</p>
-                </div>
-            )}
+            {error && <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-2">{error}</div>}
 
+            {/* New Policy Form */}
             {isAdding && (
-                <Card className="mb-8 border-2 border-surface-700 shadow-te">
-                    <CardContent className="p-6">
-                        <h3 className="text-lg font-medium text-white mb-4">Create New Route Policy</h3>
+                <Card className="mb-2">
+                    <CardContent className="p-5">
+                        <h3 className="text-sm font-semibold text-slate-900 mb-4">Create Route Policy</h3>
                         <form onSubmit={handleCreate} className="space-y-4 max-w-2xl">
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm text-gray-400">Policy Name</label>
-                                    <input
-                                        required
-                                        value={newPolicyName}
-                                        onChange={e => setNewPolicyName(e.target.value)}
-                                        className="w-full rounded-none bg-surface-900 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-0 shadow-te-sm font-mono"
-                                        placeholder="e.g. Finance API"
-                                    />
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Policy Name</label>
+                                    <input required value={newPolicyName} onChange={e => setNewPolicyName(e.target.value)} className={inputCls} placeholder="Finance API" />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm text-gray-400">Route Regex Pattern</label>
-                                    <input
-                                        required
-                                        value={newPolicyPattern}
-                                        onChange={e => setNewPolicyPattern(e.target.value)}
-                                        className="w-full rounded-none bg-surface-900 border-2 border-surface-700 px-3 py-2 text-sm text-brand-500 focus:outline-none focus:border-brand-500 focus:ring-0 shadow-te-sm font-mono tracking-wider"
-                                        placeholder="^/api/finance(/.*)?$"
-                                    />
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Route Regex</label>
+                                    <input required value={newPolicyPattern} onChange={e => setNewPolicyPattern(e.target.value)} className={inputCls + ' font-mono'} placeholder="^/api/finance(/.*)?$" />
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm text-gray-400">Priority (lower is first)</label>
-                                    <input
-                                        required
-                                        type="number"
-                                        value={newPolicyPriority}
-                                        onChange={e => setNewPolicyPriority(e.target.value)}
-                                        className="w-full rounded-none bg-surface-900 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-0 shadow-te-sm font-mono"
-                                    />
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Priority</label>
+                                    <input required type="number" value={newPolicyPriority} onChange={e => setNewPolicyPriority(e.target.value)} className={inputCls} />
                                 </div>
-                                <div className="space-y-2 col-span-2">
-                                    <label className="text-sm text-gray-400">Required Roles (comma separated)</label>
-                                    <input
-                                        disabled={newPolicyAnyAuth}
-                                        value={newPolicyRoles}
-                                        onChange={e => setNewPolicyRoles(e.target.value)}
-                                        className="w-full rounded-none bg-surface-900 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-0 shadow-te-sm font-mono disabled:opacity-50"
-                                        placeholder="admin, hr"
-                                    />
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-medium text-slate-500 mb-1.5">Required Roles</label>
+                                    <input disabled={newPolicyAnyAuth} value={newPolicyRoles} onChange={e => setNewPolicyRoles(e.target.value)} className={inputCls + ' disabled:opacity-50'} placeholder="admin, hr" />
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-2 pt-2">
-                                    <input
-                                        type="checkbox"
-                                        id="anyAuth"
-                                        checked={newPolicyAnyAuth}
-                                        onChange={e => setNewPolicyAnyAuth(e.target.checked)}
-                                        className="rounded-none border-2 border-surface-700 bg-surface-900 text-brand-500 focus:ring-brand-500 focus:ring-offset-surface-950 h-5 w-5"
-                                    />
-                                    <label htmlFor="anyAuth" className="text-sm font-bold uppercase tracking-widest text-gray-300">Allow ANY Authenticated (Bypass RBAC)</label>
-                            </div>
-
-                            <div className="pt-4 flex justify-end">
-                                <Button type="submit">Save Policy</Button>
+                            <label className="flex items-center gap-2.5 cursor-pointer">
+                                <input type="checkbox" checked={newPolicyAnyAuth} onChange={e => setNewPolicyAnyAuth(e.target.checked)} className="rounded border-slate-300 text-brand-500 focus:ring-brand-500 w-4 h-4" />
+                                <span className="text-sm text-slate-600">Allow any authenticated user (bypass RBAC)</span>
+                            </label>
+                            <div className="flex justify-end gap-2 pt-1">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setIsAdding(false)}>Cancel</Button>
+                                <Button type="submit" size="sm">Save Policy</Button>
                             </div>
                         </form>
                     </CardContent>
                 </Card>
             )}
 
-            {/* SIMULATOR SANDBOX */}
-            <Card className="mb-8 border-2 border-surface-700 shadow-te bg-surface-950">
-                <CardContent className="p-0">
-                    <div className="flex border-b-2 border-surface-700 bg-surface-900 px-6 py-4 items-center gap-3">
-                        <ShieldAlert className="h-5 w-5 text-brand-400" />
-                        <h3 className="text-lg font-bold text-white uppercase tracking-widest">Diagnostic Sandbox</h3>
-                    </div>
-                    
-                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                            <p className="text-gray-400 text-sm mb-4">Test if a hypothetical user would be allowed to access a given URL path under the current routing policies.</p>
-                            <form onSubmit={handleSimulate} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-mono text-gray-400 uppercase">Mock Email</label>
-                                        <input required value={simEmail} onChange={e => setSimEmail(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-mono text-gray-400 uppercase">Mock Roles</label>
-                                        <input required value={simRoles} onChange={e => setSimRoles(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div className="col-span-2 space-y-2">
-                                        <label className="text-xs font-mono text-gray-400 uppercase">Target Path</label>
-                                        <input required value={simPath} onChange={e => setSimPath(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-brand-400 font-bold tracking-wider focus:border-brand-500 outline-none font-mono" placeholder="e.g. /api/admin" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-mono text-gray-400 uppercase">Method</label>
-                                        <select value={simMethod} onChange={e => setSimMethod(e.target.value)} className="w-full bg-surface-800 border-2 border-surface-700 px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono">
-                                            {['GET','POST','PUT','PATCH','DELETE'].map(m => <option key={m} value={m}>{m}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <Button type="submit" variant="secondary" isLoading={simulating} className="w-full border-2 border-surface-700 hover:bg-surface-700 text-white shadow-te">
-                                    EXECUTE_SIMULATION
-                                </Button>
-                            </form>
+            {/* Simulator */}
+            <Card className="mb-2">
+                <CardHeader className="border-b border-slate-100 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                        <Terminal className="h-4 w-4 text-slate-500" /> Policy Simulator
+                    </CardTitle>
+                    <CardDescription>Test if a user would be granted access under current policies</CardDescription>
+                </CardHeader>
+                <CardContent className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <form onSubmit={handleSimulate} className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1.5">Email</label>
+                                <input required value={simEmail} onChange={e => setSimEmail(e.target.value)} className={inputCls} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1.5">Roles (comma-sep)</label>
+                                <input required value={simRoles} onChange={e => setSimRoles(e.target.value)} className={inputCls} />
+                            </div>
                         </div>
-                        
-                        {/* Simulation Result Terminal */}
-                        <div className="bg-black border-2 border-surface-700 p-4 font-mono text-sm relative overflow-hidden flex flex-col justify-center min-h-[160px]">
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,229,255,0.03)_0%,transparent_100%)] pointer-events-none"></div>
-                            {!simResult ? (
-                                <div className="text-gray-600 flex items-center gap-2">
-                                    <div className="w-2 h-4 bg-brand-400 animate-pulse"></div> waiting for input...
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="col-span-2">
+                                <label className="block text-xs font-medium text-slate-500 mb-1.5">Path</label>
+                                <input required value={simPath} onChange={e => setSimPath(e.target.value)} className={inputCls + ' font-mono'} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1.5">Method</label>
+                                <select value={simMethod} onChange={e => setSimMethod(e.target.value)} className={selectCls}>
+                                    {['GET','POST','PUT','PATCH','DELETE'].map(m => <option key={m}>{m}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <Button type="submit" variant="secondary" isLoading={simulating} className="w-full">
+                            Run Simulation
+                        </Button>
+                    </form>
+
+                    {/* Result */}
+                    <div className={`rounded-xl border p-4 flex flex-col justify-center min-h-[140px] transition-colors ${simResult ? (simResult.allowed ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200') : 'bg-slate-50 border-slate-200'}`}>
+                        {!simResult ? (
+                            <p className="text-slate-400 text-sm text-center">Results will appear here after simulation</p>
+                        ) : (
+                            <div className="space-y-3">
+                                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${simResult.allowed ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                    {simResult.allowed ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                                    {simResult.allowed ? 'Access Granted' : 'Access Denied'}
                                 </div>
-                            ) : (
-                                <div className="space-y-2 relative z-10">
-                                    <div className="flex items-center gap-2 mb-4 text-xs">
-                                        <span className={`px-2 py-0.5 font-bold tracking-widest ${simResult.allowed ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500 text-black shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}>
-                                            {simResult.allowed ? 'ACCESS GRANTED' : 'ACCESS DENIED'}
-                                        </span>
-                                    </div>
-                                    <div className="text-gray-400 tracking-wider">
-                                        <span className="text-brand-500 opacity-70">USER |</span> <span className="text-white">{simResult.email}</span> [{simResult.simulated_roles.join(', ')}]<br/>
-                                        <span className="text-brand-500 opacity-70">REQ  |</span> <span className="text-yellow-400">{simMethod}</span> <span className="text-white">{simResult.path}</span><br/>
-                                        <span className="text-brand-500 opacity-70">RULE |</span> <span className={simResult.allowed ? "text-emerald-400" : "text-red-400"}>{simResult.reason}</span>
-                                    </div>
+                                <div className="space-y-1.5 text-sm font-mono">
+                                    <div><span className="text-slate-400">User: </span><span className="text-slate-700">{simResult.email} [{simResult.simulated_roles.join(', ')}]</span></div>
+                                    <div><span className="text-slate-400">Path: </span><span className="text-slate-700">{simMethod} {simResult.path}</span></div>
+                                    <div><span className="text-slate-400">Rule: </span><span className={simResult.allowed ? 'text-emerald-600' : 'text-red-600'}>{simResult.reason}</span></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* OPA Hot-Reload */}
+            <Card className="mb-2">
+                <CardHeader className="border-b border-slate-100 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                        <Code2 className="h-4 w-4 text-amber-500" /> OPA Policy Engine
+                    </CardTitle>
+                    <CardDescription>Edit and deploy Rego policy — changes take effect immediately without a restart</CardDescription>
+                </CardHeader>
+                <CardContent className="p-5 space-y-4">
+                    <Button variant="outline" size="sm" isLoading={opaLoading} onClick={loadOpaPolicy}>
+                        <RefreshCw className={`mr-1.5 h-4 w-4 ${opaLoading ? 'animate-spin' : ''}`} /> Load Current Policy
+                    </Button>
+                    <form onSubmit={handleOpaDeploy} className="space-y-3">
+                        <textarea
+                            value={opaPolicy}
+                            onChange={e => setOpaPolicy(e.target.value)}
+                            rows={12}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-900 px-4 py-3 text-sm text-emerald-400 font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 resize-y"
+                            placeholder={`package gatekeeper.authz\n\ndefault allow = false\n\nallow {\n    input.user.roles[_] == "admin"\n}`}
+                            spellCheck={false}
+                        />
+                        <div className="flex items-center gap-3">
+                            <Button type="submit" isLoading={opaSaving} disabled={!opaPolicy.trim()}
+                                className="bg-amber-500 hover:bg-amber-600 text-white border-amber-600">
+                                Deploy Policy
+                            </Button>
+                            {opaStatus && (
+                                <div className={`flex items-center gap-2 text-sm font-medium ${opaStatus.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {opaStatus.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                                    {opaStatus.message}
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </form>
                 </CardContent>
             </Card>
 
-            {/* OPA Policy Hot-Reload */}
-            <Card className="mb-8 border-2 border-surface-700 shadow-te bg-surface-950">
-                <CardContent className="p-0">
-                    <div className="flex border-b-2 border-surface-700 bg-surface-900 px-6 py-4 items-center gap-3">
-                        <Code2 className="h-5 w-5 text-yellow-400" />
-                        <h3 className="text-lg font-bold text-white uppercase tracking-widest">OPA Policy Engine</h3>
-                        <span className="ml-auto text-[10px] font-mono text-gray-500">hot-reload — no restart required</span>
-                    </div>
-                    <div className="p-6">
-                        <p className="text-gray-400 text-sm mb-4">
-                            Edit and deploy the live Rego authorization policy. Changes take effect immediately and invalidate the decision cache.
-                        </p>
-                        <div className="flex gap-3 mb-4">
-                            <Button
-                                variant="secondary"
-                                onClick={loadOpaPolicy}
-                                isLoading={opaLoading}
-                                className="border-2 border-surface-700"
-                            >
-                                <RefreshCw className={`mr-2 h-4 w-4 ${opaLoading ? 'animate-spin' : ''}`} />
-                                Load Current Policy
-                            </Button>
-                        </div>
-                        <form onSubmit={handleOpaDeploy} className="space-y-4">
-                            <textarea
-                                value={opaPolicy}
-                                onChange={e => setOpaPolicy(e.target.value)}
-                                rows={14}
-                                className="w-full rounded-none bg-black border-2 border-surface-700 px-4 py-3 text-sm text-brand-400 font-mono focus:outline-none focus:border-brand-500 resize-y"
-                                placeholder={`package gatekeeper.authz\n\ndefault allow = false\n\nallow {\n    input.user.roles[_] == "admin"\n}`}
-                                spellCheck={false}
-                            />
-                            <div className="flex items-center gap-4">
-                                <Button
-                                    type="submit"
-                                    isLoading={opaSaving}
-                                    disabled={!opaPolicy.trim()}
-                                    className="border-2 border-yellow-500/50 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20"
-                                >
-                                    Deploy Policy
-                                </Button>
-                                {opaStatus && (
-                                    <div className={`flex items-center gap-2 text-sm font-mono ${opaStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {opaStatus.ok
-                                            ? <CheckCircle className="h-4 w-4" />
-                                            : <XCircle className="h-4 w-4" />}
-                                        {opaStatus.message}
-                                    </div>
-                                )}
-                            </div>
-                        </form>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-                {policies.map((policy) => (
-                    <Card key={policy.id} className="group hover:-translate-y-1 hover:shadow-[4px_4px_0px_#ff6b00] hover:border-brand-500 transition-all duration-200">
-                        <CardContent className="p-0">
-                            <div className="flex items-center justify-between p-6">
-
-                                {/* Left side: Icon & Details */}
-                                <div className="flex items-start gap-4">
-                                    <div className="mt-1 shrink-0 bg-surface-800 p-2 border-2 border-surface-700 shadow-te-sm">
-                                        {policy.allow_any_authenticated ? (
-                                            <Globe className="h-5 w-5 text-emerald-400" />
-                                        ) : (
-                                            <Shield className="h-5 w-5 text-brand-400" />
-                                        )}
+            {/* Policy list */}
+            <div className="space-y-3">
+                {policies.map(policy => (
+                    <Card key={policy.id} className="group hover:shadow-md transition-shadow">
+                        <CardContent className="p-5">
+                            <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-3">
+                                    <div className="mt-0.5 h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                                        {policy.allow_any_authenticated
+                                            ? <Globe className="h-4 w-4 text-emerald-500" />
+                                            : <Shield className="h-4 w-4 text-brand-500" />}
                                     </div>
                                     <div>
-                                        <div className="flex items-center gap-3">
-                                            <h3 className="text-white font-medium text-lg">{policy.name}</h3>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-sm font-semibold text-slate-900">{policy.name}</span>
                                             {!policy.is_active && <Badge variant="warning">Inactive</Badge>}
-                                            <Badge variant="outline" className="text-xs font-mono bg-surface-950 px-2 py-0.5 border-gray-800 text-gray-400">
-                                                Pri: {policy.priority}
-                                            </Badge>
+                                            <span className="text-[10px] text-slate-400 font-medium">Priority {policy.priority}</span>
                                         </div>
-
-                                        <div className="mt-2 flex items-center gap-2 font-mono text-sm text-gray-500">
-                                            <span className="bg-surface-950 px-3 py-1 border-2 border-surface-700 text-brand-500 shadow-te-sm font-bold tracking-wider">
-                                                {policy.pattern}
-                                            </span>
-                                        </div>
-
-                                        <div className="mt-4 flex flex-wrap gap-2">
+                                        <code className="text-xs text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-100 font-mono">{policy.pattern}</code>
+                                        <div className="flex flex-wrap gap-1.5 mt-2.5">
                                             {policy.allow_any_authenticated ? (
-                                                <Badge variant="success" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                                                    Any Authenticated User
-                                                </Badge>
+                                                <Badge variant="success">Any authenticated user</Badge>
                                             ) : policy.roles.length > 0 ? (
-                                                policy.roles.map(r => (
-                                                    <Badge key={r} variant="default" className="capitalize">
-                                                        Role: {r}
-                                                    </Badge>
-                                                ))
+                                                policy.roles.map(r => <Badge key={r} variant="default">Role: {r}</Badge>)
                                             ) : (
-                                                <Badge variant="error" className="bg-red-500/10 text-red-500 border-red-500/20">
-                                                    DENY ALL (No roles configured)
-                                                </Badge>
+                                                <Badge variant="error">Deny all — no roles configured</Badge>
                                             )}
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* Right side: Actions */}
-                                <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                                        onClick={() => handleDelete(policy.name)}
-                                        title="Delete Policy"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </div>
-
+                                <Button
+                                    variant="ghost" size="icon"
+                                    className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                    onClick={() => handleDelete(policy.name)}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>
                 ))}
                 {policies.length === 0 && !loading && (
-                    <div className="text-center py-12 border border-dashed border-gray-800 rounded-lg">
-                        <ShieldAlert className="mx-auto h-8 w-8 text-gray-600 mb-3" />
-                        <h3 className="text-gray-400 font-medium">No Route Policies Found</h3>
-                        <p className="text-sm text-gray-500 mt-1">Create a policy to start enforcing access control.</p>
-                    </div>
+                    <Card className="flex flex-col items-center justify-center py-16 border-dashed">
+                        <ShieldAlert className="h-10 w-10 text-slate-300 mb-3" />
+                        <p className="font-medium text-slate-600">No policies defined</p>
+                        <p className="text-sm text-slate-400 mt-1">Create a policy to start enforcing route-level access control.</p>
+                    </Card>
                 )}
             </div>
         </PageLayout>

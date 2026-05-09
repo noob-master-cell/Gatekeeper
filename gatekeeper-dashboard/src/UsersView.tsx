@@ -25,24 +25,14 @@ export default function UsersView() {
         try {
             setLoading(true);
             const sessions: Session[] = await fetchSessions();
-            // Derive unique users from sessions
             const map = new Map<string, UserInfo>();
             sessions.forEach(s => {
                 const existing = map.get(s.user_id);
                 if (!existing) {
-                    map.set(s.user_id, {
-                        user_id: s.user_id,
-                        email: s.email,
-                        roles: s.roles,
-                        session_count: 1,
-                        last_seen: s.created_at,
-                    });
+                    map.set(s.user_id, { user_id: s.user_id, email: s.email, roles: s.roles, session_count: 1, last_seen: s.created_at });
                 } else {
                     existing.session_count++;
-                    if (s.created_at > existing.last_seen) {
-                        existing.last_seen = s.created_at;
-                        existing.roles = s.roles;
-                    }
+                    if (s.created_at > existing.last_seen) { existing.last_seen = s.created_at; existing.roles = s.roles; }
                 }
             });
             setUsers(Array.from(map.values()));
@@ -57,7 +47,7 @@ export default function UsersView() {
     useEffect(() => { load(); }, [load]);
 
     const handleRevokeAll = async (userId: string, email: string) => {
-        if (!confirm(`Revoke access for ${email}? They will be logged out of all active sessions immediately.`)) return;
+        if (!confirm(`Revoke all sessions for ${email}?`)) return;
         try {
             await revokeAllUserSessions(userId);
             await load();
@@ -70,106 +60,86 @@ export default function UsersView() {
         <PageLayout>
             <PageHeader
                 title="Users"
-                description={`${users.length} unique user${users.length !== 1 ? 's' : ''} with active sessions`}
+                description={`${users.length} user${users.length !== 1 ? 's' : ''} with active sessions`}
                 action={
-                    <Button variant="outline" onClick={load} isLoading={loading}>
-                        <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        Refresh
+                    <Button variant="outline" onClick={load} isLoading={loading} size="sm">
+                        <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                     </Button>
                 }
             />
 
             {error && (
-                <div className="flex items-center p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm">
-                    <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
-                    {error}
+                <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
                 </div>
             )}
 
             {users.length === 0 && !loading ? (
-                <Card className="flex flex-col items-center justify-center py-20 bg-surface-900 border-2 border-surface-700 shadow-te">
-                    <Shield className="h-12 w-12 text-surface-700 mb-4" />
-                    <p className="text-white font-bold text-lg uppercase tracking-widest">No active users</p>
-                    <p className="text-gray-500 text-sm mt-1 uppercase font-mono">There are no users with active sessions.</p>
+                <Card className="flex flex-col items-center justify-center py-20">
+                    <Shield className="h-10 w-10 text-slate-300 mb-3" />
+                    <p className="font-medium text-slate-600">No active users</p>
+                    <p className="text-sm text-slate-400 mt-1">Users appear here when they have active sessions.</p>
                 </Card>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {users.map(user => {
                         const isAdmin = user.roles.includes('admin');
+                        const accentColor = isAdmin ? 'bg-red-500' : user.roles.includes('hr') ? 'bg-amber-500' : 'bg-brand-500';
 
                         return (
-                            <Card
-                                key={user.user_id}
-                                className="group relative overflow-hidden bg-surface-900 border-gray-800 hover:border-gray-700 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
-                            >
-                                {/* Accent Top Border */}
-                                <div className={`absolute top-0 left-0 w-full h-1 ${isAdmin ? 'bg-red-500/80' : user.roles.includes('hr') ? 'bg-amber-500/80' : 'bg-brand-500/80'}`} />
+                            <Card key={user.user_id} className="group overflow-hidden hover:shadow-md transition-shadow relative">
+                                {/* Top accent line */}
+                                <div className={`h-1 w-full ${accentColor}`} />
 
-                                <div className="p-6">
-                                    {/* Avatar + name */}
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-4">
+                                <div className="p-5">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className="flex items-center gap-3">
                                             <div className="relative">
-                                                <div className={`h-12 w-12 flex items-center justify-center text-black font-bold text-xl uppercase border-2 border-surface-950 shadow-te-sm
-                                                  ${isAdmin ? 'bg-red-500' : 'bg-brand-500'}
-                                                `}>
-                                                    {user.email[0]}
+                                                <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${accentColor}`}>
+                                                    {user.email[0].toUpperCase()}
                                                 </div>
                                                 {isAdmin && (
-                                                    <div className="absolute -bottom-1 -right-1 bg-surface-900 border-2 border-surface-950 p-0.5">
-                                                        <Shield className="h-4 w-4 text-red-500" />
+                                                    <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white border border-slate-200 flex items-center justify-center">
+                                                        <Shield className="h-2.5 w-2.5 text-red-500" />
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="text-white font-bold text-base truncate uppercase tracking-widest" title={user.email}>{user.email}</p>
-                                                <p className="text-xs text-brand-500 mt-1 font-mono truncate" title={user.user_id}>{user.user_id}</p>
+                                                <p className="text-sm font-semibold text-slate-900 truncate max-w-[160px]" title={user.email}>{user.email}</p>
+                                                <p className="text-[10px] text-slate-400 font-mono truncate" title={user.user_id}>{user.user_id}</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Roles */}
-                                    <div className="flex flex-wrap gap-2 mt-5">
-                                        {user.roles.map(role => (
-                                            <Badge
-                                                key={role}
-                                                variant={role === 'admin' ? 'error' : role === 'hr' ? 'warning' : 'outline'}
-                                            >
-                                                {role}
+                                    <div className="flex flex-wrap gap-1.5 mb-4">
+                                        {user.roles.map(r => (
+                                            <Badge key={r} variant={r === 'admin' ? 'error' : r === 'hr' ? 'warning' : 'outline'}>
+                                                {r}
                                             </Badge>
                                         ))}
                                     </div>
 
-                                    {/* Stats */}
-                                    <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-800/60">
-                                        <div className="text-xs text-gray-400 flex flex-col gap-1">
-                                            <div className="flex justify-between w-full gap-4">
-                                                <span className="text-gray-500">Active Sessions</span>
-                                                <span className="text-white font-medium flex items-center gap-1">
-                                                    <Key className="h-3 w-3 text-brand-400" />
-                                                    {user.session_count}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between w-full gap-4">
-                                                <span className="text-gray-500">Last Seen</span>
-                                                <span className="text-gray-300">
-                                                    {formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })}
-                                                </span>
-                                            </div>
+                                    <div className="space-y-2 text-sm border-t border-slate-100 pt-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-500 text-xs">Active sessions</span>
+                                            <span className="text-slate-700 font-medium flex items-center gap-1">
+                                                <Key className="h-3 w-3 text-brand-400" /> {user.session_count}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-500 text-xs">Last seen</span>
+                                            <span className="text-slate-600 text-xs">{formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })}</span>
                                         </div>
                                     </div>
 
-                                    {/* Action Overlay */}
-                                    <div className="absolute inset-x-0 bottom-0 bg-surface-800 border-t-2 border-surface-700 p-4 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200 ease-in-out flex items-center justify-center">
-                                        <Button
-                                            variant="destructive"
-                                            className="w-full shadow-te-sm"
-                                            onClick={() => handleRevokeAll(user.user_id, user.email)}
-                                        >
-                                            <UserX className="mr-2 h-4 w-4" />
-                                            Revoke_Access
-                                        </Button>
-                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full mt-4 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                                        onClick={() => handleRevokeAll(user.user_id, user.email)}
+                                    >
+                                        <UserX className="mr-1.5 h-3.5 w-3.5" /> Revoke Access
+                                    </Button>
                                 </div>
                             </Card>
                         );

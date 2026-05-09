@@ -10,6 +10,7 @@ import { Sidebar } from './components/ui/Sidebar';
 import type { ViewType } from './components/ui/Sidebar';
 import { Topbar } from './components/ui/Topbar';
 import { LoginScreen } from './components/ui/LoginScreen';
+import { ShieldCheck } from 'lucide-react';
 
 export interface UserInfo {
     sub: string;
@@ -28,20 +29,22 @@ export default function App() {
         const timeout = setTimeout(() => controller.abort(), 8000);
         fetch('/auth/me', { credentials: 'include', signal: controller.signal })
             .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data && data.email) setUser(data);
-                else setUser(null);
-            })
+            .then(data => { if (data && data.email) setUser(data); else setUser(null); })
             .catch(() => setUser(null))
             .finally(() => { clearTimeout(timeout); setLoading(false); });
     }, []);
 
     if (loading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-surface-950">
+            <div className="flex h-screen items-center justify-center bg-slate-50">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="h-10 w-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm font-bold uppercase tracking-widest text-surface-700">Authenticating...</span>
+                    <div className="relative">
+                        <div className="h-12 w-12 rounded-2xl bg-brand-500 flex items-center justify-center">
+                            <ShieldCheck className="h-6 w-6 text-white" />
+                        </div>
+                        <div className="absolute -inset-1 rounded-2xl border-2 border-brand-500/30 animate-ping" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-500">Authenticating...</p>
                 </div>
             </div>
         );
@@ -52,19 +55,19 @@ export default function App() {
     }
 
     return (
-        <div className="flex h-screen overflow-hidden bg-surface-950 font-sans text-gray-100">
+        <div className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
             <Sidebar currentView={view} onViewChange={setView} />
 
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden min-w-0">
                 <Topbar user={user} />
 
                 <main className="flex-1 overflow-y-auto">
-                    {view === 'overview' && <OverviewView />}
-                    {view === 'traffic' && <TrafficView />}
-                    {view === 'sessions' && <SessionsView />}
-                    {view === 'users' && <UsersView />}
-                    {view === 'policies' && <PoliciesView />}
-                    {view === 'posture' && <PostureView />}
+                    {view === 'overview'   && <OverviewView />}
+                    {view === 'traffic'    && <TrafficView />}
+                    {view === 'sessions'   && <SessionsView />}
+                    {view === 'users'      && <UsersView />}
+                    {view === 'policies'   && <PoliciesView />}
+                    {view === 'posture'    && <PostureView />}
                     {view === 'ratelimits' && <RateLimitsView />}
                 </main>
             </div>

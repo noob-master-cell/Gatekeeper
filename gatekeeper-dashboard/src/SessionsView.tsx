@@ -6,14 +6,9 @@ import { Button } from './components/ui/Button';
 import { Badge } from './components/ui/Badge';
 import { Card } from './components/ui/Card';
 import { formatDistanceToNow } from 'date-fns';
-import { Shield, Key, Clock, Trash2, RefreshCw, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Shield, Key, Clock, Trash2, RefreshCw, AlertCircle, CheckCircle, XCircle, ShieldOff } from 'lucide-react';
 
-interface Toast {
-    id: number;
-    message: string;
-    ok: boolean;
-}
-
+interface Toast { id: number; message: string; ok: boolean; }
 let toastId = 0;
 
 export default function SessionsView() {
@@ -62,10 +57,7 @@ export default function SessionsView() {
     };
 
     const handleRevokeAll = async (userId: string, email: string) => {
-        if (!confirmRevokeAll || confirmRevokeAll.userId !== userId) {
-            setConfirmRevokeAll({ userId, email });
-            return;
-        }
+        if (!confirmRevokeAll || confirmRevokeAll.userId !== userId) { setConfirmRevokeAll({ userId, email }); return; }
         setConfirmRevokeAll(null);
         setActionLoading(`revoke:${userId}`);
         try {
@@ -79,7 +71,6 @@ export default function SessionsView() {
         }
     };
 
-    // Group by user
     const grouped = sessions.reduce((acc, s) => {
         if (!acc[s.user_id]) acc[s.user_id] = [];
         acc[s.user_id].push(s);
@@ -88,18 +79,11 @@ export default function SessionsView() {
 
     return (
         <PageLayout>
-            {/* Toast notifications */}
-            <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+            {/* Toasts */}
+            <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
                 {toasts.map(t => (
-                    <div
-                        key={t.id}
-                        className={`flex items-center gap-3 px-4 py-3 border-2 text-sm font-mono shadow-te animate-in fade-in slide-in-from-right-4 duration-200 ${
-                            t.ok
-                                ? 'bg-emerald-950 border-emerald-500/40 text-emerald-300'
-                                : 'bg-red-950 border-red-500/40 text-red-300'
-                        }`}
-                    >
-                        {t.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                    <div key={t.id} className={`pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium shadow-lg animate-in slide-in-from-right-4 ${t.ok ? 'bg-white border-emerald-200 text-emerald-700' : 'bg-white border-red-200 text-red-700'}`}>
+                        {t.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
                         {t.message}
                     </div>
                 ))}
@@ -107,35 +91,28 @@ export default function SessionsView() {
 
             <PageHeader
                 title="Active Sessions"
-                description={`${sessions.length} active sessions across ${Object.keys(grouped).length} users`}
+                description={`${sessions.length} sessions · ${Object.keys(grouped).length} users`}
                 action={
-                    <Button variant="outline" onClick={load} isLoading={loading}>
-                        <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        Refresh
+                    <Button variant="outline" onClick={load} isLoading={loading} size="sm">
+                        <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                     </Button>
                 }
             />
 
             {error && (
-                <div className="flex items-center p-4 bg-red-500/10 border border-red-500/20 text-red-300 text-sm mb-4">
-                    <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
-                    {error}
+                <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
                 </div>
             )}
 
-            {/* Inline confirm banners */}
             {confirmRevokeAll && (
-                <div className="flex items-center gap-4 p-4 bg-red-950 border-2 border-red-500/40 text-red-300 text-sm mb-4">
-                    <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                    <span>Revoke ALL sessions for <strong>{confirmRevokeAll.email}</strong>? This will force re-login.</span>
+                <div className="flex flex-wrap items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+                    <ShieldOff className="h-4 w-4 shrink-0" />
+                    <span>Revoke <strong>all sessions</strong> for <strong>{confirmRevokeAll.email}</strong>? They'll be signed out immediately.</span>
                     <div className="ml-auto flex gap-2">
-                        <Button
-                            size="sm"
-                            variant="destructive"
-                            isLoading={actionLoading === `revoke:${confirmRevokeAll.userId}`}
-                            onClick={() => handleRevokeAll(confirmRevokeAll.userId, confirmRevokeAll.email)}
-                        >
-                            Confirm Revoke
+                        <Button size="sm" variant="destructive" isLoading={actionLoading === `revoke:${confirmRevokeAll.userId}`}
+                            onClick={() => handleRevokeAll(confirmRevokeAll!.userId, confirmRevokeAll!.email)}>
+                            Confirm
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setConfirmRevokeAll(null)}>Cancel</Button>
                     </div>
@@ -143,49 +120,48 @@ export default function SessionsView() {
             )}
 
             {Object.keys(grouped).length === 0 && !loading ? (
-                <Card className="flex flex-col items-center justify-center py-20 bg-surface-900 border-2 border-surface-700 shadow-te">
-                    <Key className="h-12 w-12 text-surface-700 mb-4" />
-                    <p className="text-white font-bold text-lg uppercase tracking-widest">No active sessions</p>
-                    <p className="text-gray-500 text-sm mt-1 uppercase font-mono">Users will appear here when they log in.</p>
+                <Card className="flex flex-col items-center justify-center py-20">
+                    <Key className="h-10 w-10 text-slate-300 mb-3" />
+                    <p className="font-medium text-slate-600">No active sessions</p>
+                    <p className="text-sm text-slate-400 mt-1">Users will appear here when they log in.</p>
                 </Card>
             ) : (
-                <div className="space-y-6">
+                <div className="space-y-4">
                     {Object.entries(grouped).map(([userId, userSessions]) => {
-                        const email = userSessions[0].email;
-                        const roles = userSessions[0].roles;
+                        const { email, roles } = userSessions[0];
                         const isAdmin = roles.includes('admin');
                         const isRevokingAll = actionLoading === `revoke:${userId}`;
 
                         return (
-                            <Card key={userId} className="overflow-hidden border-2 border-surface-700 bg-surface-900 shadow-te">
-                                <div className="bg-surface-800 border-b-2 border-surface-700 px-6 py-4 flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
+                            <Card key={userId} className="overflow-hidden">
+                                {/* User header */}
+                                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+                                    <div className="flex items-center gap-3">
                                         <div className="relative">
-                                            <div className="h-12 w-12 bg-brand-500 border-2 border-surface-950 shadow-te-sm flex items-center justify-center text-black font-bold text-lg uppercase">
-                                                {email[0]}
+                                            <div className={`h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold ${isAdmin ? 'bg-red-500' : 'bg-brand-500'}`}>
+                                                {email[0].toUpperCase()}
                                             </div>
                                             {isAdmin && (
-                                                <div className="absolute -bottom-1 -right-1 bg-surface-900 border-2 border-surface-950 p-0.5">
-                                                    <Shield className="h-4 w-4 text-brand-500" />
+                                                <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white border border-slate-200 flex items-center justify-center">
+                                                    <Shield className="h-2.5 w-2.5 text-red-500" />
                                                 </div>
                                             )}
                                         </div>
                                         <div>
-                                            <h3 className="text-white font-bold text-base uppercase tracking-widest flex items-center gap-3">
-                                                {email}
-                                                <div className="flex gap-1.5">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-semibold text-slate-900">{email}</span>
+                                                <div className="flex gap-1">
                                                     {roles.map(r => (
-                                                        <Badge key={r} variant={r === 'admin' ? 'error' : r === 'hr' ? 'warning' : 'outline'}>
-                                                            {r}
-                                                        </Badge>
+                                                        <Badge key={r} variant={r === 'admin' ? 'error' : r === 'hr' ? 'warning' : 'outline'} className="text-[10px]">{r}</Badge>
                                                     ))}
                                                 </div>
-                                            </h3>
-                                            <p className="text-xs text-brand-500 font-mono mt-1 tracking-wider">{userId}</p>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 font-mono mt-0.5">{userId}</p>
                                         </div>
                                     </div>
                                     <Button
-                                        variant="destructive"
+                                        variant={confirmRevokeAll?.userId === userId ? 'destructive' : 'outline'}
+                                        size="sm"
                                         isLoading={isRevokingAll}
                                         onClick={() => handleRevokeAll(userId, email)}
                                     >
@@ -193,51 +169,46 @@ export default function SessionsView() {
                                     </Button>
                                 </div>
 
-                                <div className="divide-y divide-gray-800/50">
+                                {/* Sessions */}
+                                <div className="divide-y divide-slate-100">
                                     {userSessions.map(s => {
                                         const isKilling = actionLoading === s.jti;
                                         const needsConfirm = confirmKill === s.jti;
                                         return (
-                                            <div key={s.jti} className="flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                                                <div className="flex items-center gap-6">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Session ID (JTI)</span>
-                                                        <span className="text-sm text-brand-500 font-mono font-bold bg-surface-950 px-2 py-1 border-2 border-surface-700 shadow-te-sm">{s.jti}</span>
+                                            <div key={s.jti} className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
+                                                <div className="flex flex-wrap items-center gap-6">
+                                                    <div>
+                                                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1">Session JTI</p>
+                                                        <span className="text-xs text-brand-600 font-mono bg-brand-50 px-2 py-0.5 rounded-md border border-brand-100">{s.jti}</span>
                                                     </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Created</span>
-                                                        <span className="text-sm text-white font-mono flex items-center gap-1.5">
-                                                            <Clock className="h-3.5 w-3.5 text-brand-500" />
+                                                    <div>
+                                                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1">Created</p>
+                                                        <span className="text-xs text-slate-600 flex items-center gap-1">
+                                                            <Clock className="h-3 w-3 text-slate-400" />
                                                             {formatDistanceToNow(new Date(s.created_at), { addSuffix: true })}
                                                         </span>
                                                     </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Expires In</span>
-                                                        <span className="text-sm text-white font-mono">{Math.floor(s.ttl_seconds / 60)}m {s.ttl_seconds % 60}s</span>
+                                                    <div>
+                                                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1">Expires</p>
+                                                        <span className="text-xs text-slate-600">{Math.floor(s.ttl_seconds / 60)}m {s.ttl_seconds % 60}s</span>
                                                     </div>
                                                 </div>
 
                                                 <div className="flex items-center gap-2">
                                                     {needsConfirm && (
-                                                        <span className="text-xs text-red-400 font-mono">Click again to confirm</span>
+                                                        <span className="text-xs text-red-500">Click again to confirm</span>
                                                     )}
                                                     <Button
                                                         variant={needsConfirm ? 'destructive' : 'ghost'}
                                                         size="icon"
                                                         isLoading={isKilling}
                                                         onClick={() => handleKill(s.jti)}
-                                                        className={needsConfirm ? '' : 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'}
-                                                        title="Kill Session"
+                                                        className={needsConfirm ? '' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}
                                                     >
                                                         {!isKilling && <Trash2 className="h-4 w-4" />}
                                                     </Button>
                                                     {needsConfirm && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => setConfirmKill(null)}
-                                                            className="text-gray-500 hover:text-gray-300"
-                                                        >
+                                                        <Button variant="ghost" size="sm" onClick={() => setConfirmKill(null)} className="text-slate-500">
                                                             Cancel
                                                         </Button>
                                                     )}

@@ -4,7 +4,7 @@ import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Button } from './components/ui/Button';
 import { Badge } from './components/ui/Badge';
 import { Card } from './components/ui/Card';
-import { Play, Pause, RefreshCw, AlertCircle, Filter, ArrowDown } from 'lucide-react';
+import { Play, Pause, RefreshCw, AlertCircle, Filter, ArrowDown, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function TrafficView() {
@@ -14,7 +14,6 @@ export default function TrafficView() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Filters
     const [email, setEmail] = useState('');
     const [path, setPath] = useState('');
     const [method, setMethod] = useState('');
@@ -24,90 +23,71 @@ export default function TrafficView() {
         try {
             if (!isAuto && !append) setLoading(true);
             const params: FetchAuditLogsParams = { count: 100 };
-            
-            if (append && nextCursor) {
-                params.cursor = nextCursor;
-                // Automatically pause live stream if we start digging into history
-                setIsLive(false); 
-            }
-
+            if (append && nextCursor) { params.cursor = nextCursor; setIsLive(false); }
             if (email.trim()) params.email = email.trim();
             if (path.trim()) params.path = path.trim();
             if (method.trim()) params.method = method.trim();
             if (statusFilter.trim()) params.status_code = statusFilter.trim();
-
             const res = await fetchAuditLogs(params);
-            
             setLogs(prev => append ? [...prev, ...res.data] : res.data);
             setNextCursor(res.next_cursor);
             setError(null);
         } catch (e) {
-            if (!isAuto) setError('Failed to fetch audit logs: ' + (e instanceof Error ? e.message : 'Unknown error'));
-            else console.error('Auto-refresh failed:', e);
+            if (!isAuto) setError('Failed to fetch logs: ' + (e instanceof Error ? e.message : 'Unknown error'));
         } finally {
             if (!isAuto) setLoading(false);
         }
     }, [email, path, method, statusFilter, nextCursor]);
 
-    // Initial load
-    useEffect(() => {
-        loadLogs();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useEffect(() => { loadLogs(); }, []); // eslint-disable-line
 
-    // Live stream interval
     useEffect(() => {
         if (!isLive) return;
-        const interval = setInterval(() => loadLogs(false, true), 3000);
-        return () => clearInterval(interval);
+        const iv = setInterval(() => loadLogs(false, true), 3000);
+        return () => clearInterval(iv);
     }, [isLive, loadLogs]);
 
-    const handleFilterSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        // Submitting new filters resets pagination
-        loadLogs(false, false);
+    const methodBadge = (m: string) => {
+        const map: Record<string, string> = {
+            GET:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+            POST:   'bg-blue-50 text-blue-700 border-blue-200',
+            DELETE: 'bg-red-50 text-red-600 border-red-200',
+            PUT:    'bg-amber-50 text-amber-700 border-amber-200',
+            PATCH:  'bg-amber-50 text-amber-700 border-amber-200',
+        };
+        return map[m] ?? 'bg-slate-100 text-slate-600 border-slate-200';
     };
 
-    const handleClearFilters = () => {
-        setEmail('');
-        setPath('');
-        setMethod('');
-        setStatusFilter('');
-        // Let state update before fetching
-        setTimeout(() => loadLogs(false, false), 0);
+    const statusBadge = (s: number) => {
+        if (s >= 200 && s < 300) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        if (s >= 300 && s < 400) return 'bg-blue-50 text-blue-700 border-blue-200';
+        if (s >= 400 && s < 500) return 'bg-amber-50 text-amber-700 border-amber-200';
+        if (s >= 500) return 'bg-red-50 text-red-600 border-red-200';
+        return 'bg-slate-100 text-slate-600 border-slate-200';
     };
 
-    const methodColor = (m: string) => {
-        if (m === 'GET') return 'text-emerald-500 bg-surface-900 border-2 border-emerald-500 shadow-te-sm';
-        if (m === 'POST') return 'text-brand-500 bg-surface-900 border-2 border-brand-500 shadow-te-sm';
-        if (m === 'DELETE') return 'text-red-500 bg-surface-900 border-2 border-red-500 shadow-te-sm';
-        if (m === 'PUT' || m === 'PATCH') return 'text-amber-500 bg-surface-900 border-2 border-amber-500 shadow-te-sm';
-        return 'text-gray-400 bg-surface-900 border-2 border-gray-400 shadow-te-sm';
-    };
+    const hasFilters = email || path || method || statusFilter;
 
-    const statusColor = (s: number) => {
-        if (s >= 200 && s < 300) return 'text-emerald-500 bg-surface-900 border-2 border-emerald-500 shadow-te-sm';
-        if (s >= 300 && s < 400) return 'text-brand-500 bg-surface-900 border-2 border-brand-500 shadow-te-sm';
-        if (s >= 400 && s < 500) return 'text-amber-500 bg-surface-900 border-2 border-amber-500 shadow-te-sm';
-        if (s >= 500) return 'text-red-500 bg-surface-900 border-2 border-red-500 shadow-te-sm';
-        return 'text-gray-400 bg-surface-900 border-2 border-gray-400 shadow-te-sm';
-    };
+    const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400';
+    const selectCls = inputCls + ' appearance-none';
 
     return (
         <PageLayout>
             <PageHeader
                 title="Live Traffic"
-                description={`${logs.length} events · ${isLive ? 'Auto-refreshing' : 'Paused'}`}
+                description={`${logs.length} events · ${isLive ? 'Auto-refreshing every 3s' : 'Paused'}`}
                 action={
                     <div className="flex items-center gap-2">
                         <Button
                             variant={isLive ? 'secondary' : 'default'}
                             size="sm"
                             onClick={() => setIsLive(!isLive)}
-                            className={isLive ? 'text-emerald-400 border-emerald-500/20' : ''}
+                            className={isLive ? 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100' : ''}
                         >
-                            {isLive ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                            {isLive ? 'Live' : 'Paused'}
+                            {isLive
+                                ? <><Pause className="mr-1.5 h-3.5 w-3.5" /> Live</>
+                                : <><Play className="mr-1.5 h-3.5 w-3.5" /> Paused</>
+                            }
                         </Button>
                         <Button variant="outline" size="icon" onClick={() => loadLogs(false)} disabled={loading}>
                             <RefreshCw className={`h-4 w-4 ${loading && !isLive ? 'animate-spin' : ''}`} />
@@ -116,43 +96,35 @@ export default function TrafficView() {
                 }
             />
 
-            {/* Teenage Engineering Filter Panel */}
-            <Card className="border-2 border-surface-700 bg-surface-900 shadow-te p-4 mb-6">
-                <form 
-                    className="flex flex-wrap gap-4 items-end"
-                    onSubmit={handleFilterSubmit}
-                >
-                    <div className="flex flex-col gap-1.5 flex-1 min-w-[150px]">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">User Email</label>
-                        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="*@example.com" className="w-full bg-surface-950 border-2 border-surface-700 rounded-none px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none shadow-te-sm font-mono placeholder:text-surface-700" />
+            {/* Filter bar */}
+            <Card className="p-4">
+                <form className="flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); loadLogs(); }}>
+                    <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+                        <label className="text-xs font-medium text-slate-500">User Email</label>
+                        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="user@example.com" className={inputCls} />
                     </div>
-                    <div className="flex flex-col gap-1.5 flex-1 min-w-[150px]">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Path</label>
-                        <input value={path} onChange={e=>setPath(e.target.value)} placeholder="/api/..." className="w-full bg-surface-950 border-2 border-surface-700 rounded-none px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none shadow-te-sm font-mono placeholder:text-surface-700" />
+                    <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+                        <label className="text-xs font-medium text-slate-500">Path</label>
+                        <input value={path} onChange={e => setPath(e.target.value)} placeholder="/api/..." className={inputCls} />
                     </div>
-                    <div className="flex flex-col gap-1.5 min-w-[120px]">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Method</label>
-                        <select value={method} onChange={e=>setMethod(e.target.value)} className="w-full bg-surface-950 border-2 border-surface-700 rounded-none px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none shadow-te-sm font-mono appearance-none uppercase tracking-widest font-bold">
-                            <option value="">ALL</option>
-                            <option value="GET">GET</option>
-                            <option value="POST">POST</option>
-                            <option value="PUT">PUT</option>
-                            <option value="DELETE">DELETE</option>
-                            <option value="PATCH">PATCH</option>
+                    <div className="flex flex-col gap-1.5 min-w-[110px]">
+                        <label className="text-xs font-medium text-slate-500">Method</label>
+                        <select value={method} onChange={e => setMethod(e.target.value)} className={selectCls}>
+                            <option value="">All</option>
+                            {['GET','POST','PUT','DELETE','PATCH'].map(m => <option key={m}>{m}</option>)}
                         </select>
                     </div>
-                    <div className="flex flex-col gap-1.5 min-w-[100px]">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Status</label>
-                        <input value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} placeholder="e.g. 403" className="w-full bg-surface-950 border-2 border-surface-700 rounded-none px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none shadow-te-sm font-mono placeholder:text-surface-700" />
+                    <div className="flex flex-col gap-1.5 min-w-[90px]">
+                        <label className="text-xs font-medium text-slate-500">Status</label>
+                        <input value={statusFilter} onChange={e => setStatusFilter(e.target.value)} placeholder="403" className={inputCls} />
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button type="submit" variant="default" className="whitespace-nowrap min-w-[100px] h-[40px]">
-                            {loading && !isLive ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}
-                            Filter
+                        <Button type="submit" variant="default" size="sm">
+                            <Filter className="mr-1.5 h-3.5 w-3.5" /> Filter
                         </Button>
-                        {(email || path || method || statusFilter) && (
-                            <Button type="button" variant="outline" className="h-[40px] px-3" onClick={handleClearFilters}>
-                                Clear
+                        {hasFilters && (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => { setEmail(''); setPath(''); setMethod(''); setStatusFilter(''); setTimeout(() => loadLogs(), 0); }}>
+                                <X className="mr-1.5 h-3.5 w-3.5" /> Clear
                             </Button>
                         )}
                     </div>
@@ -160,85 +132,71 @@ export default function TrafficView() {
             </Card>
 
             {error ? (
-                <div className="flex items-center p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm">
-                    <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                    <AlertCircle className="h-5 w-5 flex-shrink-0" />
                     {error}
                 </div>
             ) : (
-                <Card className="overflow-hidden flex flex-col h-[calc(100vh-22rem)]">
-                    <div className="overflow-x-auto flex-1 h-full">
-                        <table className="w-full text-left text-sm whitespace-nowrap border-collapse">
-                            <thead className="sticky top-0 bg-surface-800 border-b-2 border-surface-700 z-10 shadow-sm">
+                <Card className="overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 22rem)' }}>
+                    <div className="overflow-auto flex-1">
+                        <table className="w-full text-sm text-left whitespace-nowrap">
+                            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
                                 <tr>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">Time</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">Method</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">Path</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">Status</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">User</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">Duration</th>
-                                    <th className="px-5 py-3.5 font-medium text-gray-400 uppercase tracking-wider text-[11px]">IP</th>
+                                    {['Time','Method','Path','Status','User','Duration','IP'].map(h => (
+                                        <th key={h} className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
+                                    ))}
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-800/50 max-h-full overflow-y-auto">
+                            <tbody className="divide-y divide-slate-100">
                                 {logs.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-5 py-12 text-center text-gray-500">
-                                            No traffic events found matching properties.
+                                        <td colSpan={7} className="px-4 py-12 text-center text-slate-400 text-sm">
+                                            No traffic events match the current filters.
                                         </td>
                                     </tr>
-                                ) : (
-                                    logs.map(log => (
-                                        <tr key={log.id} className="hover:bg-white/[0.02] transition-colors group">
-                                            <td className="px-5 py-3 text-gray-400 font-mono text-xs">
-                                                <span title={new Date(log.timestamp).toLocaleString()}>
-                                                    {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}
-                                                </span>
-                                            </td>
-                                            <td className="px-5 py-3">
-                                                <span className={`px-2 py-1 rounded-none text-[10px] font-bold uppercase tracking-widest ${methodColor(log.method)}`}>
-                                                    {log.method}
-                                                </span>
-                                            </td>
-                                            <td className="px-5 py-3 text-gray-200 truncate max-w-[250px]" title={log.path}>
-                                                {log.path}
-                                            </td>
-                                            <td className="px-5 py-3">
-                                                <span className={`px-2 py-1 rounded-none text-[10px] font-bold uppercase tracking-widest font-mono ${statusColor(log.status_code)}`}>
-                                                    {log.status_code}
-                                                </span>
-                                            </td>
-                                            <td className="px-5 py-3">
-                                                {log.email ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-gray-200">{log.email}</span>
-                                                        {log.roles?.length > 0 && (
-                                                            <Badge variant={log.roles.includes('admin') ? 'error' : 'outline'} className="text-[9px] py-0 px-1.5 h-4">
-                                                                {log.roles[0]}
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-500 italic">anonymous</span>
-                                                )}
-                                            </td>
-                                            <td className="px-5 py-3 font-mono text-xs text-gray-400">
-                                                {log.duration_ms.toFixed(1)}ms
-                                            </td>
-                                            <td className="px-5 py-3 font-mono text-xs text-gray-500">
-                                                {log.client_ip}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
+                                ) : logs.map(log => (
+                                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="px-4 py-3 text-slate-400 text-xs">
+                                            {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${methodBadge(log.method)}`}>
+                                                {log.method}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-700 font-mono text-xs truncate max-w-[220px]" title={log.path}>{log.path}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold font-mono ${statusBadge(log.status_code)}`}>
+                                                {log.status_code}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {log.email ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-slate-700 text-xs">{log.email}</span>
+                                                    {log.roles?.length > 0 && (
+                                                        <Badge variant={log.roles.includes('admin') ? 'error' : 'outline'} className="text-[10px] py-0 px-1.5 h-4">
+                                                            {log.roles[0]}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-400 italic text-xs">anonymous</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{log.duration_ms.toFixed(1)}ms</td>
+                                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{log.client_ip}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                     {nextCursor && (
-                         <div className="bg-surface-800 border-t-2 border-surface-700 flex justify-center p-3">
-                             <Button variant="secondary" onClick={() => loadLogs(true, false)} disabled={loading}>
-                                 <ArrowDown className="mr-2 h-4 w-4" /> Load Older Logs
-                             </Button>
-                         </div>
+                        <div className="border-t border-slate-200 bg-slate-50 flex justify-center p-3">
+                            <Button variant="secondary" size="sm" onClick={() => loadLogs(true)} disabled={loading}>
+                                <ArrowDown className="mr-1.5 h-4 w-4" /> Load older logs
+                            </Button>
+                        </div>
                     )}
                 </Card>
             )}

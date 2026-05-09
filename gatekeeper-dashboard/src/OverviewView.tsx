@@ -4,16 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './com
 import { Badge } from './components/ui/Badge';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Skeleton } from './components/ui/Skeleton';
-import { Activity, Server, ShieldAlert, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint } from 'lucide-react';
+import { Activity, Server, ShieldCheck, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint, TrendingUp } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 
 interface SseData {
@@ -23,21 +17,33 @@ interface SseData {
     rate_limited_keys: number;
 }
 
+function StatCard({ title, value, sub, icon: Icon, iconColor = 'text-slate-400', accent }: {
+    title: string; value: string; sub?: string;
+    icon: React.ElementType; iconColor?: string; accent?: boolean;
+}) {
+    return (
+        <Card className={accent ? 'border-brand-200 bg-brand-50' : ''}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className={`text-sm font-medium ${accent ? 'text-brand-700' : 'text-slate-500'}`}>{title}</CardTitle>
+                <Icon className={`h-4 w-4 ${iconColor}`} />
+            </CardHeader>
+            <CardContent>
+                <div className={`text-2xl font-semibold ${accent ? 'text-brand-700' : 'text-slate-900'}`}>{value}</div>
+                {sub && <p className={`text-xs mt-1 ${accent ? 'text-brand-500' : 'text-slate-400'}`}>{sub}</p>}
+            </CardContent>
+        </Card>
+    );
+}
+
 export default function OverviewView() {
     const [proxyData, setProxyData] = useState<any>(null);
-    const [backendData, setBackendData] = useState<any>(null);
     const [trafficData, setTrafficData] = useState<TrafficMetric[]>([]);
-
-    // Mission Control Telemetry Data
     const [recentBlocks, setRecentBlocks] = useState<AuditLog[]>([]);
-    const [topPaths, setTopPaths] = useState<{path: string, count: number}[]>([]);
-    const [topUsers, setTopUsers] = useState<{email: string, count: number}[]>([]);
-
-    // SSE live counters
+    const [topPaths, setTopPaths] = useState<{ path: string; count: number }[]>([]);
+    const [topUsers, setTopUsers] = useState<{ email: string; count: number }[]>([]);
     const [sseData, setSseData] = useState<SseData | null>(null);
     const [sseConnected, setSseConnected] = useState(false);
     const esRef = useRef<EventSource | null>(null);
-
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -47,359 +53,239 @@ export default function OverviewView() {
                     fetchHealth().catch(() => null),
                     fetchMetrics().catch(() => null),
                     fetchTrafficMetrics().catch(() => []),
-                    fetchAuditLogs({ count: 500 }).catch(() => ({ data: [] }))
+                    fetchAuditLogs({ count: 500 }).catch(() => ({ data: [] })),
                 ]);
 
                 setProxyData({ health: ph, metrics: pm });
-                setBackendData({ status: ph ? 'ok' : 'error' });
 
-                // Traffic data implies the API worked
-                if (traffic && traffic.length > 0) {
+                if (traffic?.length) {
                     setTrafficData(traffic);
                 } else {
-                    // Fallback empty dataset for rendering smooth curve if nothing is blocked/allowed
                     const now = new Date();
-                    const emptyData = Array.from({ length: 24 }).map((_, i) => ({
+                    setTrafficData(Array.from({ length: 24 }, (_, i) => ({
                         time: new Date(now.getTime() - (23 - i) * 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        success: 0,
-                        blocked: 0,
-                    }));
-                    setTrafficData(emptyData);
+                        success: 0, blocked: 0,
+                    })));
                 }
 
-                // Process Audit Logs for Mission Control Telemetry
                 const logs: AuditLog[] = auditRes.data || [];
-                
-                // 1. Recent Security Blocks
-                const blocks = logs.filter(l => l.status_code >= 400).slice(0, 5);
-                setRecentBlocks(blocks);
+                setRecentBlocks(logs.filter(l => l.status_code >= 400).slice(0, 6));
 
-                // 2. Top Paths
-                const pathCounts = logs.reduce((acc, log) => {
-                    acc[log.path] = (acc[log.path] || 0) + 1;
-                    return acc;
-                }, {} as Record<string, number>);
-                const sortedPaths = Object.entries(pathCounts)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5)
-                    .map(([path, count]) => ({ path, count }));
-                setTopPaths(sortedPaths);
+                const pathMap = logs.reduce((a, l) => ({ ...a, [l.path]: (a[l.path] || 0) + 1 }), {} as Record<string, number>);
+                setTopPaths(Object.entries(pathMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, count]) => ({ path, count })));
 
-                // 3. Top Active Users
-                const userCounts = logs.reduce((acc, log) => {
-                    const email = log.email || 'anonymous';
-                    acc[email] = (acc[email] || 0) + 1;
-                    return acc;
-                }, {} as Record<string, number>);
-                const sortedUsers = Object.entries(userCounts)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5)
-                    .map(([email, count]) => ({ email, count }));
-                setTopUsers(sortedUsers);
-
+                const userMap = logs.reduce((a, l) => { const e = l.email || 'anonymous'; return { ...a, [e]: (a[e] || 0) + 1 }; }, {} as Record<string, number>);
+                setTopUsers(Object.entries(userMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([email, count]) => ({ email, count })));
             } finally {
                 setLoading(false);
             }
         }
-        
         load();
-        const interval = setInterval(load, 30000);
-        return () => clearInterval(interval);
+        const iv = setInterval(load, 30000);
+        return () => clearInterval(iv);
     }, []);
 
-    // SSE connection for live counters
+    // SSE live feed
     useEffect(() => {
         const es = new EventSource('/admin/stream');
         esRef.current = es;
         es.onopen = () => setSseConnected(true);
-        es.onmessage = (e) => {
-            try {
-                setSseData(JSON.parse(e.data));
-            } catch { /* ignore parse errors */ }
-        };
-        es.onerror = () => {
-            setSseConnected(false);
-            es.close();
-        };
-        return () => {
-            es.close();
-            setSseConnected(false);
-        };
+        es.onmessage = (e) => { try { setSseData(JSON.parse(e.data)); } catch { /* ignore */ } };
+        es.onerror = () => { setSseConnected(false); es.close(); };
+        return () => { es.close(); setSseConnected(false); };
     }, []);
+
+    const pOk = proxyData?.health?.status === 'ok';
 
     if (loading) {
         return (
             <PageLayout>
-                <PageHeader title="Mission Control" description="Zero-Trust System Telemetry" />
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-                    {[...Array(4)].map((_, i) => (
-                        <Skeleton key={i} className="h-32 w-full" />
-                    ))}
+                <PageHeader title="Dashboard" description="Zero-trust telemetry overview" />
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
                 </div>
-                <Skeleton className="h-[400px] w-full mt-6" />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                    <Skeleton className="h-[300px] w-full" />
-                    <Skeleton className="h-[300px] w-full" />
-                </div>
+                <Skeleton className="h-72 w-full mt-4" />
             </PageLayout>
         );
     }
 
-    const pOk = proxyData?.health?.status === 'ok';
-    const bOk = backendData?.status === 'ok';
-
     return (
         <PageLayout>
-            <PageHeader
-                title="Mission Control"
-                description="Zero-Trust System Telemetry"
-            />
+            <PageHeader title="Dashboard" description="Zero-trust system telemetry" />
 
-            {/* Row 1: Key Stats */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-400">Proxy Health</CardTitle>
-                        <Activity className={pOk ? "h-4 w-4 text-emerald-400" : "h-4 w-4 text-red-400"} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{pOk ? 'Healthy' : 'Offline'}</div>
-                        <p className="text-xs text-gray-500 mt-1">v{proxyData?.health?.version || 'unknown'}</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-400">Backend API</CardTitle>
-                        <Server className={bOk ? "h-4 w-4 text-emerald-400" : "h-4 w-4 text-red-400"} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{bOk ? 'Healthy' : 'Offline'}</div>
-                        <p className="text-xs text-gray-500 mt-1">Connected to internal services</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-400">Total Uptime</CardTitle>
-                        <ShieldAlert className="h-4 w-4 text-brand-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">
-                            {proxyData?.metrics?.uptime_seconds
-                                ? `${Math.floor(proxyData.metrics.uptime_seconds / 3600)}h ${Math.floor((proxyData.metrics.uptime_seconds % 3600) / 60)}m`
-                                : '--'}
-                        </div>
-                        <p className="text-xs text-brand-400/80 mt-1">Python {proxyData?.metrics?.python_version || '--'}</p>
-                    </CardContent>
-                </Card>
-
-                {/* Live SSE counter card */}
-                <Card className={sseConnected ? "border-emerald-500/30" : "border-surface-700"}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-400">Live Feed</CardTitle>
-                        <Radio className={`h-4 w-4 ${sseConnected ? "text-emerald-400 animate-pulse" : "text-gray-600"}`} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">
-                            {sseData ? sseData.active_sessions : '--'}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Active sessions · {sseData ? `${sseData.rate_limited_keys} rate keys` : 'connecting...'}
-                        </p>
-                    </CardContent>
-                </Card>
+            {/* Stats row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard
+                    title="Proxy Status"
+                    value={pOk ? 'Healthy' : 'Offline'}
+                    sub={`v${proxyData?.health?.version || '—'}`}
+                    icon={Activity}
+                    iconColor={pOk ? 'text-emerald-500' : 'text-red-500'}
+                />
+                <StatCard
+                    title="Uptime"
+                    value={proxyData?.metrics?.uptime_seconds
+                        ? `${Math.floor(proxyData.metrics.uptime_seconds / 3600)}h ${Math.floor((proxyData.metrics.uptime_seconds % 3600) / 60)}m`
+                        : '—'}
+                    sub={`Python ${proxyData?.metrics?.python_version || '—'}`}
+                    icon={Server}
+                    iconColor="text-slate-400"
+                />
+                <StatCard
+                    title="Live Sessions"
+                    value={sseData ? String(sseData.active_sessions) : '—'}
+                    sub={sseConnected ? 'Streaming live' : 'Connecting…'}
+                    icon={Radio}
+                    iconColor={sseConnected ? 'text-emerald-500' : 'text-slate-300'}
+                />
+                <StatCard
+                    title="Rate Limit Keys"
+                    value={sseData ? String(sseData.rate_limited_keys) : '—'}
+                    sub="Active windows in Redis"
+                    icon={TrendingUp}
+                    iconColor="text-brand-400"
+                    accent={!!sseData && sseData.rate_limited_keys > 0}
+                />
             </div>
 
-            {/* mTLS + Security posture strip */}
-            <div className="mt-4 grid grid-cols-3 gap-3">
+            {/* Security posture pills */}
+            <div className="flex flex-wrap gap-2">
                 {[
-                    { icon: Lock, label: 'mTLS', status: 'ENABLED', color: 'text-emerald-400' },
-                    { icon: ShieldAlert, label: 'RBAC', status: 'ENFORCED', color: 'text-brand-400' },
-                    { icon: Fingerprint, label: 'OPA', status: 'ACTIVE', color: 'text-yellow-400' },
-                ].map(({ icon: Icon, label, status, color }) => (
-                    <div key={label} className="flex items-center gap-3 px-4 py-2.5 bg-surface-900 border-2 border-surface-700">
-                        <div className={`h-1.5 w-1.5 rounded-full bg-current ${color} animate-pulse`} />
-                        <Icon className={`h-3.5 w-3.5 ${color}`} />
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${color}`}>{label}</span>
-                        <span className="ml-auto text-[10px] font-mono text-gray-500">{status}</span>
+                    { icon: Lock,        label: 'mTLS Enabled',   color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                    { icon: ShieldCheck, label: 'RBAC Enforced',  color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                    { icon: Fingerprint, label: 'OPA Active',     color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                ].map(({ icon: Icon, label, color }) => (
+                    <div key={label} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${color}`}>
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
                     </div>
                 ))}
             </div>
 
-            {/* Row 2: Traffic Volume Chart */}
-            <div className="mt-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Traffic Volume (24h)</CardTitle>
-                        <CardDescription>Successful and blocked requests over time</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="h-[280px] w-full mt-4">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart
-                                    data={trafficData}
-                                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                                >
-                                    <defs>
-                                        <linearGradient id="colorSuccess" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#00E5FF" stopOpacity={0.8} />
-                                            <stop offset="100%" stopColor="#00E5FF" stopOpacity={0.1} />
-                                        </linearGradient>
-                                        <linearGradient id="colorBlocked" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#FF3A20" stopOpacity={0.8} />
-                                            <stop offset="100%" stopColor="#FF3A20" stopOpacity={0.1} />
-                                        </linearGradient>
-                                    </defs>
-                                    <XAxis
-                                        dataKey="time"
-                                        stroke="#475569"
-                                        fontSize={12}
-                                        tickLine={false}
-                                        axisLine={false}
-                                        minTickGap={30}
-                                    />
-                                    <YAxis
-                                        stroke="#475569"
-                                        fontSize={12}
-                                        tickLine={false}
-                                        axisLine={false}
-                                        tickFormatter={(value) => `${value}`}
-                                    />
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0px' }}
-                                        itemStyle={{ color: '#e2e8f0' }}
-                                    />
-                                    <Area
-                                        type="step"
-                                        dataKey="success"
-                                        name="Allowed"
-                                        stroke="#00E5FF"
-                                        strokeWidth={3}
-                                        fillOpacity={1}
-                                        fill="url(#colorSuccess)"
-                                    />
-                                    <Area
-                                        type="step"
-                                        dataKey="blocked"
-                                        name="Blocked (401/403)"
-                                        stroke="#FF3A20"
-                                        strokeWidth={3}
-                                        fillOpacity={1}
-                                        fill="url(#colorBlocked)"
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+            {/* Traffic chart */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Traffic Volume — 24h</CardTitle>
+                    <CardDescription>Allowed vs blocked requests over time</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={trafficData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="gSuccess" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.15} />
+                                        <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="gBlocked" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#ef4444" stopOpacity={0.15} />
+                                        <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="time" stroke="#cbd5e1" fontSize={11} tickLine={false} axisLine={false} minTickGap={30} />
+                                <YAxis stroke="#cbd5e1" fontSize={11} tickLine={false} axisLine={false} />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <Tooltip
+                                    contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: 12 }}
+                                    itemStyle={{ color: '#475569' }}
+                                />
+                                <Area type="monotone" dataKey="success" name="Allowed" stroke="#10b981" strokeWidth={2} fill="url(#gSuccess)" />
+                                <Area type="monotone" dataKey="blocked" name="Blocked" stroke="#ef4444" strokeWidth={2} fill="url(#gBlocked)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
 
-            {/* Row 3: Densified Telemetry (Top Paths, Top Users) & Security Feed */}
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
-                
-                {/* Left Column: Top Paths & Top Users */}
-                <div className="flex flex-col gap-6">
-                    <Card className="flex-1">
-                        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle className="text-md flex items-center gap-2">
-                                    <Target className="h-4 w-4 text-emerald-400"/> Top Targets
-                                </CardTitle>
-                                <CardDescription>Most accessed application paths</CardDescription>
-                            </div>
+            {/* Bottom two-column grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left: top paths + top users */}
+                <div className="space-y-6">
+                    <Card>
+                        <CardHeader className="pb-3">
+                            <CardTitle className="flex items-center gap-2 text-sm">
+                                <Target className="h-4 w-4 text-blue-500" /> Top Endpoints
+                            </CardTitle>
+                            <CardDescription>Most accessed paths</CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-4">
-                                {topPaths.length === 0 ? <p className="text-gray-500 text-sm">No traffic data.</p> : 
-                                    topPaths.map((item, idx) => (
-                                        <div key={idx} className="flex items-center justify-between text-sm">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <span className="text-gray-500 font-mono text-xs w-4">{idx + 1}.</span>
-                                                <span className="text-gray-200 font-mono truncate max-w-[200px]" title={item.path}>{item.path}</span>
+                        <CardContent className="space-y-3">
+                            {topPaths.length === 0
+                                ? <p className="text-slate-400 text-sm">No data yet.</p>
+                                : topPaths.map((item, idx) => {
+                                    const pct = topPaths[0].count > 0 ? (item.count / topPaths[0].count) * 100 : 0;
+                                    return (
+                                        <div key={idx}>
+                                            <div className="flex items-center justify-between text-sm mb-1">
+                                                <span className="text-slate-700 font-mono text-xs truncate max-w-[220px]" title={item.path}>{item.path}</span>
+                                                <span className="text-slate-500 text-xs ml-2">{item.count}</span>
                                             </div>
-                                            <Badge variant="outline" className="font-mono bg-surface-900">{item.count} req</Badge>
+                                            <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
+                                            </div>
                                         </div>
-                                    ))
-                                }
-                            </div>
+                                    );
+                                })}
                         </CardContent>
                     </Card>
 
-                    <Card className="flex-1">
-                        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle className="text-md flex items-center gap-2">
-                                    <UserCog className="h-4 w-4 text-brand-400"/> Top Identities
-                                </CardTitle>
-                                <CardDescription>Most hyperactive accounts</CardDescription>
-                            </div>
+                    <Card>
+                        <CardHeader className="pb-3">
+                            <CardTitle className="flex items-center gap-2 text-sm">
+                                <UserCog className="h-4 w-4 text-brand-500" /> Top Identities
+                            </CardTitle>
+                            <CardDescription>Most active accounts</CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-4">
-                                {topUsers.length === 0 ? <p className="text-gray-500 text-sm">No identity data.</p> : 
-                                    topUsers.map((item, idx) => (
-                                        <div key={idx} className="flex items-center justify-between text-sm">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <span className="text-gray-500 font-mono text-xs w-4">{idx + 1}.</span>
-                                                <span className={`${item.email === 'anonymous' ? 'text-gray-500 italic' : 'text-gray-200'} truncate max-w-[200px]`} title={item.email}>{item.email}</span>
+                        <CardContent className="space-y-2.5">
+                            {topUsers.length === 0
+                                ? <p className="text-slate-400 text-sm">No data yet.</p>
+                                : topUsers.map((item, idx) => (
+                                    <div key={idx} className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600">
+                                                {item.email[0]?.toUpperCase()}
                                             </div>
-                                            <Badge variant="outline" className="font-mono bg-surface-900 border-brand-500/30 text-brand-400">{item.count}</Badge>
+                                            <span className={`text-sm truncate max-w-[180px] ${item.email === 'anonymous' ? 'text-slate-400 italic' : 'text-slate-700'}`}>{item.email}</span>
                                         </div>
-                                    ))
-                                }
-                            </div>
+                                        <Badge variant="outline" className="text-xs">{item.count}</Badge>
+                                    </div>
+                                ))}
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* Right Column: Security Blocks Feed */}
+                {/* Right: security blocks */}
                 <Card className="flex flex-col">
                     <CardHeader className="pb-3">
-                        <CardTitle className="text-md flex items-center gap-2 text-red-400">
-                            <AlertTriangle className="h-4 w-4"/> Recent Threat Blocks
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                            <AlertTriangle className="h-4 w-4 text-red-500" /> Recent Blocks
                         </CardTitle>
-                        <CardDescription>Latest 401/403 authorization denials</CardDescription>
+                        <CardDescription>Latest 401 / 403 denials</CardDescription>
                     </CardHeader>
-                    <CardContent className="flex-1 overflow-x-auto p-0">
+                    <CardContent className="flex-1 p-0 overflow-hidden">
                         {recentBlocks.length === 0 ? (
-                            <div className="p-6 text-center text-gray-500 text-sm">No security blocks detected recently.</div>
+                            <div className="p-6 text-center text-slate-400 text-sm">
+                                No security blocks detected.
+                            </div>
                         ) : (
-                            <table className="w-full text-left text-sm whitespace-nowrap">
-                                <thead className="bg-surface-800 border-y-2 border-surface-700">
-                                    <tr>
-                                        <th className="px-4 py-2 font-medium text-gray-400 uppercase tracking-wider text-[10px]">Time</th>
-                                        <th className="px-4 py-2 font-medium text-gray-400 uppercase tracking-wider text-[10px]">Path</th>
-                                        <th className="px-4 py-2 font-medium text-gray-400 uppercase tracking-wider text-[10px]">User</th>
-                                        <th className="px-4 py-2 font-medium text-gray-400 uppercase tracking-wider text-[10px]">Stat</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-800/50">
-                                    {recentBlocks.map(log => (
-                                        <tr key={log.id} className="hover:bg-white/[0.02] transition-colors">
-                                            <td className="px-4 py-3 text-gray-500 font-mono text-[11px]">
-                                                {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-300 font-mono text-[11px] max-w-[120px] truncate" title={log.path}>
-                                                {log.path}
-                                            </td>
-                                            <td className="px-4 py-3 text-[11px] max-w-[100px] truncate" title={log.email || 'anonymous'}>
-                                                {log.email ? <span className="text-gray-300">{log.email}</span> : <span className="text-gray-500 italic">anon</span>}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-red-500 font-bold border border-red-500 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-mono">
-                                                    {log.status_code}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            <div className="divide-y divide-slate-100">
+                                {recentBlocks.map(log => (
+                                    <div key={log.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                                        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600 border border-red-200 font-mono shrink-0">
+                                            {log.status_code}
+                                        </span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-slate-700 font-mono truncate">{log.path}</p>
+                                            <p className="text-xs text-slate-400 truncate">{log.email || 'anonymous'}</p>
+                                        </div>
+                                        <span className="text-[11px] text-slate-400 shrink-0">
+                                            {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </CardContent>
                 </Card>
-
             </div>
         </PageLayout>
     );
