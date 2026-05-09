@@ -14,7 +14,7 @@ services:
     # host connections correctly. Railway overrides this with --host :: via env.
     command: >
       sh -c "python -c 'from app.auth.keys import initialize_keys; initialize_keys()'
-      && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
+      && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${GK_WORKERS:-1}"
     ports:
       - "8000:8000"
     environment:

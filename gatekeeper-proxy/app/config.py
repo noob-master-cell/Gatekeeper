@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Proxy server
     proxy_host: str = "0.0.0.0"
     proxy_port: int = 8000
+    workers: int = 2
 
     # Timeouts (seconds)
     backend_connect_timeout: float = 5.0
