@@ -390,6 +390,18 @@ async def simulate_policy(request: Request):
     return JSONResponse(content=result)
 
 
+# ─── Circuit breaker status ──────────────────────────────────
+
+
+@app.get("/admin/circuit-breakers")
+async def circuit_breaker_status(request: Request) -> JSONResponse:
+    """Return current state of all circuit breakers."""
+    from app.circuit_breaker import backend_cb, control_plane_cb
+    return JSONResponse(content={
+        "data": [backend_cb.status(), control_plane_cb.status()]
+    })
+
+
 # ─── System status ──────────────────────────────────────────
 
 
@@ -404,12 +416,14 @@ async def admin_status(request: Request) -> JSONResponse:
     except Exception:
         pass
 
+    from app.circuit_breaker import backend_cb, control_plane_cb
     return JSONResponse(content={
         "opa_enabled": settings.opa_enabled,
         "mtls_enabled": settings.mtls_enabled,
         "redis_ok": redis_ok,
         "dev_mode": settings.dev_mode,
         "version": __version__,
+        "circuit_breakers": [backend_cb.status(), control_plane_cb.status()],
     })
 
 
