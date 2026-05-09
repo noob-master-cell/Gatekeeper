@@ -32,31 +32,31 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 @router.get("/login")
-async def login(request: Request) -> RedirectResponse:
+async def login(request: Request) -> Response:
     """Redirect user to Google OAuth consent page."""
+    # Google OAuth takes priority when credentials are configured
+    if settings.google_client_id and settings.google_client_secret:
+        params = {
+            "client_id": settings.google_client_id,
+            "redirect_uri": settings.google_redirect_uri,
+            "response_type": "code",
+            "scope": "email profile",
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        auth_url = f"{GOOGLE_AUTH_URL}?{query}"
+        logger.info("auth.login.redirect", url=auth_url)
+        return RedirectResponse(url=auth_url)
+
+    # Fall back to dev login only when Google is not configured
     if settings.dev_mode and settings.dev_login_enabled:
         return RedirectResponse(url="/auth/dev-login")
 
-    if not settings.google_client_id or not settings.google_client_secret:
-        return JSONResponse(
-            status_code=501,
-            content={"error": "Google OAuth not configured", "detail": "Set GK_GOOGLE_CLIENT_ID and GK_GOOGLE_CLIENT_SECRET environment variables."},
-        )
-
-    params = {
-        "client_id": settings.google_client_id,
-        "redirect_uri": settings.google_redirect_uri,
-        "response_type": "code",
-        "scope": "email profile",
-        "access_type": "offline",
-        "prompt": "consent",
-    }
-
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    auth_url = f"{GOOGLE_AUTH_URL}?{query}"
-
-    logger.info("auth.login.redirect", url=auth_url)
-    return RedirectResponse(url=auth_url)
+    return JSONResponse(
+        status_code=501,
+        content={"error": "Authentication not configured", "detail": "Set GK_GOOGLE_CLIENT_ID and GK_GOOGLE_CLIENT_SECRET."},
+    )
 
 
 # ─── OAuth Callback ───────────────────────────────────────────
