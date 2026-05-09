@@ -10,9 +10,10 @@ import {
     Smartphone,
     Gauge,
     ShieldCheck,
+    Key,
 } from 'lucide-react';
 
-export type ViewType = 'overview' | 'traffic' | 'sessions' | 'users' | 'policies' | 'posture' | 'ratelimits';
+export type ViewType = 'overview' | 'traffic' | 'sessions' | 'users' | 'policies' | 'posture' | 'ratelimits' | 'apikeys';
 
 interface SidebarProps {
     currentView: ViewType;
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
     { id: 'policies'   as const, label: 'Policies',       icon: ShieldAlert },
     { id: 'posture'    as const, label: 'Device Posture', icon: Smartphone },
     { id: 'ratelimits' as const, label: 'Rate Limits',    icon: Gauge },
+    { id: 'apikeys'    as const, label: 'API Keys',       icon: Key },
 ];
 
 export function Sidebar({ currentView, onViewChange, className }: SidebarProps) {

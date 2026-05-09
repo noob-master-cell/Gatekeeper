@@ -6,6 +6,7 @@ import UsersView from './UsersView';
 import PoliciesView from './PoliciesView';
 import PostureView from './PostureView';
 import RateLimitsView from './RateLimitsView';
+import ApiKeysView from './ApiKeysView';
 import { Sidebar } from './components/ui/Sidebar';
 import type { ViewType } from './components/ui/Sidebar';
 import { Topbar } from './components/ui/Topbar';
@@ -69,6 +70,7 @@ export default function App() {
                     {view === 'policies'   && <PoliciesView />}
                     {view === 'posture'    && <PostureView />}
                     {view === 'ratelimits' && <RateLimitsView />}
+                    {view === 'apikeys'    && <ApiKeysView />}
                 </main>
             </div>
         </div>

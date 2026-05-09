@@ -37,13 +37,6 @@ export interface Policy {
     roles: string[];
 }
 
-export interface MetricsData {
-    service: string;
-    version: string;
-    uptime: string;
-    python_version: string;
-}
-
 // ─── Audit Logs ──────────────────────────────────
 
 export interface AuditLogResponse {
@@ -134,14 +127,6 @@ export interface SystemStatus {
 export async function fetchAdminStatus(): Promise<SystemStatus> {
     const res = await fetch(`${BASE}/admin/status`, { credentials: 'include' });
     if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
-    return res.json();
-}
-
-// ─── Metrics ─────────────────────────────────────
-
-export async function fetchMetrics(): Promise<MetricsData> {
-    const res = await fetch(`${BASE}/metrics`);
-    if (!res.ok) throw new Error(`Failed to fetch metrics: ${res.status}`);
     return res.json();
 }
 
@@ -256,6 +241,54 @@ export async function deletePostureRule(ruleId: number): Promise<void> {
         credentials: 'include',
     });
     if (!res.ok) throw new Error(`Failed to delete posture rule: ${res.status}`);
+}
+
+// ─── API Keys ────────────────────────────────────
+
+export interface ApiKey {
+    key_hash: string;
+    key_prefix: string;
+    name: string;
+    owner: string;
+    roles: string[];
+    rate_limit: number;
+    created_at: string;
+    last_used: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+    key: string; // raw key — only returned on creation
+}
+
+export async function fetchApiKeys(): Promise<ApiKey[]> {
+    const res = await fetch(`${BASE}/admin/api-keys`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`Failed to fetch API keys: ${res.status}`);
+    const data = await res.json();
+    return data.data ?? [];
+}
+
+export async function createApiKey(payload: {
+    name: string;
+    owner: string;
+    roles: string[];
+    rate_limit: number;
+}): Promise<CreatedApiKey> {
+    const res = await fetch(`${BASE}/admin/api-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`Failed to create API key: ${res.status}`);
+    return res.json();
+}
+
+export async function revokeApiKey(keyHash: string): Promise<void> {
+    const res = await fetch(`${BASE}/admin/api-keys/${keyHash}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`Failed to revoke API key: ${res.status}`);
 }
 
 // ─── Rate Limits ─────────────────────────────────
