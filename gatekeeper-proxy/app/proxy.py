@@ -10,6 +10,7 @@ from fastapi import Request
 from fastapi.responses import StreamingResponse
 from starlette.responses import Response
 
+from app.circuit_breaker import CircuitBreakerOpen, backend_cb, control_plane_cb
 from app.config import settings
 from app.mtls import create_mtls_ssl_context
 
@@ -132,16 +133,28 @@ async def forward_request(request: Request) -> Response:
     # Read body (for non-GET methods)
     body = await request.body()
 
+    # Choose circuit breaker based on target
+    cb = control_plane_cb if path.startswith("/admin/") else backend_cb
+
     try:
         log.info("proxy.forwarding")
-        backend_response = await client.request(
-            method=request.method,
-            url=target_url,
-            headers=headers,
-            content=body if body else None,
+        backend_response = await cb.call(
+            client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body if body else None,
+            )
         )
         log.info("proxy.response", status_code=backend_response.status_code)
 
+    except CircuitBreakerOpen as exc:
+        log.warning("proxy.circuit_open", name=cb.name)
+        return Response(
+            content=f'{{"error": "Service temporarily unavailable", "detail": "{exc}", "code": 503}}',
+            status_code=503,
+            media_type="application/json",
+        )
     except httpx.ConnectTimeout:
         log.error("proxy.error.connect_timeout")
         return Response(

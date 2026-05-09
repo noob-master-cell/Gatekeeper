@@ -1,6 +1,7 @@
-"""Rate limiting middleware — token bucket algorithm with per-IP + per-API-key support.
+"""Rate limiting middleware — token bucket via atomic Lua script with per-IP + per-API-key support.
 
-Uses Redis for distributed rate limit counters with a sliding-window approach.
+Uses Redis for distributed rate limiting with an atomic token bucket algorithm
+executed via EVALSHA — no race conditions possible.
 Different rate limits are applied based on endpoint sensitivity:
   - Auth endpoints (/login, /oauth/*, /auth/*): strict limits
   - Admin API: moderate limits
@@ -11,6 +12,9 @@ API key requests use per-key rate limits stored in key metadata.
 
 from __future__ import annotations
 
+import os
+import time
+
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -19,6 +23,28 @@ from starlette.responses import JSONResponse, Response
 from app.auth.sessions import get_redis
 
 logger = structlog.get_logger()
+
+# ─── Lua script caching ──────────────────────────────────────
+
+_LUA_SCRIPT: str | None = None  # raw Lua source
+_LUA_SHA: str | None = None     # SHA after SCRIPT LOAD
+
+
+def _lua_source() -> str:
+    global _LUA_SCRIPT  # noqa: PLW0603
+    if _LUA_SCRIPT is None:
+        path = os.path.join(os.path.dirname(__file__), "token_bucket.lua")
+        with open(path) as f:
+            _LUA_SCRIPT = f.read()
+    return _LUA_SCRIPT
+
+
+async def _get_sha(r) -> str:
+    global _LUA_SHA  # noqa: PLW0603
+    if _LUA_SHA is None:
+        _LUA_SHA = await r.script_load(_lua_source())
+    return _LUA_SHA
+
 
 # ─── Rate limit tiers (max requests, window in seconds) ──────
 
@@ -56,12 +82,13 @@ def _get_tier_name(path: str) -> str:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Distributed rate limiting using Redis sliding-window counters.
+    """Distributed rate limiting using token bucket via atomic Lua script.
 
     - Uses client IP as the default rate limit key
     - Uses API key hash for API-key-authenticated requests
     - Returns 429 Too Many Requests when the limit is exceeded
     - Includes Retry-After and rate limit headers in responses
+    - Token bucket state is updated atomically via Redis EVALSHA — no race conditions
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -179,24 +206,37 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def _check_rate_limit(
         key: str, max_requests: int, window: int
     ) -> tuple[bool, int, int]:
-        """Check and increment rate limit counter in Redis.
+        """Atomic token bucket check via Redis Lua EVALSHA.
 
-        Returns:
-            Tuple of (allowed, current_count, ttl_seconds).
+        capacity    = max_requests
+        refill_rate = max_requests / window  (tokens/sec)
+
+        Returns (allowed, remaining_tokens, retry_after_seconds).
         """
+        global _LUA_SHA  # noqa: PLW0603
         r = get_redis()
+        capacity    = max_requests
+        refill_rate = max_requests / window          # tokens per second
+        now_ms      = int(time.time() * 1000)
 
-        pipe = r.pipeline()
-        pipe.incr(key)
-        pipe.ttl(key)
-        results = await pipe.execute()
+        sha = await _get_sha(r)
+        try:
+            result = await r.evalsha(
+                sha, 1, key,
+                str(capacity), str(refill_rate), str(now_ms), "1",
+            )
+        except Exception:
+            # Script not cached (Redis restart) — reload and retry once
+            _LUA_SHA = None  # reset cached SHA
+            sha = await _get_sha(r)
+            result = await r.evalsha(
+                sha, 1, key,
+                str(capacity), str(refill_rate), str(now_ms), "1",
+            )
 
-        current = results[0]
-        ttl = results[1]
+        allowed      = int(result[0]) == 1
+        remaining    = int(result[1])
+        retry_ms     = int(result[2])
+        retry_s      = max(1, (retry_ms + 999) // 1000)  # ceil to seconds
 
-        # Set expiry on first request in window
-        if ttl == -1:
-            await r.expire(key, window)
-            ttl = window
-
-        return current <= max_requests, current, ttl
+        return allowed, capacity - remaining, retry_s
