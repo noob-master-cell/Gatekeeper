@@ -390,6 +390,120 @@ async def simulate_policy(request: Request):
     return JSONResponse(content=result)
 
 
+# ─── Rate limit counters ─────────────────────────────────────
+
+
+@app.get("/admin/rate-limits")
+async def list_rate_limits(request: Request) -> JSONResponse:
+    """Return current rate limit counters from Redis."""
+    try:
+        r = get_redis()
+        results = []
+        async for key in r.scan_iter("ratelimit:*"):
+            count = await r.get(key)
+            ttl = await r.ttl(key)
+            key_str = key if isinstance(key, str) else key.decode()
+            parts = key_str.split(":", 2)
+            tier = parts[1] if len(parts) > 1 else "unknown"
+            identifier = parts[2] if len(parts) > 2 else key_str
+            results.append({
+                "key": key_str,
+                "tier": tier,
+                "identifier": identifier,
+                "count": int(count) if count else 0,
+                "ttl_seconds": ttl,
+            })
+        results.sort(key=lambda x: x["count"], reverse=True)
+        return JSONResponse(content={"data": results, "count": len(results)})
+    except RuntimeError:
+        return JSONResponse(content={"data": [], "count": 0, "note": "Redis not initialized"})
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+
+# ─── SSE metrics stream ──────────────────────────────────────
+
+
+@app.get("/admin/stream")
+async def event_stream(request: Request):
+    """Server-Sent Events stream — pushes metrics snapshot every 3 seconds."""
+    import json as _json
+    from datetime import UTC, datetime
+    from starlette.responses import StreamingResponse
+
+    async def generate():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                r = get_redis()
+                # Get recent audit log entry count
+                log_count = await r.xlen("audit:log")
+                # Get active session count
+                session_count = sum(1 async for _ in r.scan_iter("session:*"))
+                # Get rate limit hit count
+                rl_count = sum(1 async for _ in r.scan_iter("ratelimit:*"))
+            except Exception:
+                log_count = 0
+                session_count = 0
+                rl_count = 0
+
+            payload = _json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "audit_log_entries": log_count,
+                "active_sessions": session_count,
+                "rate_limited_keys": rl_count,
+            })
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(3)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ─── OPA policy hot-reload ───────────────────────────────────
+
+
+@app.get("/admin/opa/policy")
+async def get_opa_policy(request: Request) -> JSONResponse:
+    """Fetch the current Rego policy from OPA."""
+    if not settings.opa_enabled:
+        return JSONResponse(status_code=503, content={"error": "OPA not enabled"})
+    try:
+        from app.auth.opa import get_policy
+        policy = await get_policy()
+        if policy is None:
+            return JSONResponse(status_code=503, content={"error": "Could not fetch policy from OPA"})
+        return JSONResponse(content={"policy": policy})
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+
+@app.post("/admin/opa/policy")
+async def push_opa_policy(request: Request) -> JSONResponse:
+    """Push a new Rego policy to OPA (hot-reload — no proxy restart needed)."""
+    if not settings.opa_enabled:
+        return JSONResponse(status_code=503, content={"error": "OPA not enabled"})
+    try:
+        body = await request.json()
+        rego = body.get("policy", "")
+        if not rego.strip():
+            return JSONResponse(status_code=400, content={"error": "Policy text is required"})
+        from app.auth.opa import push_policy
+        success, reason = await push_policy(rego)
+        if success:
+            return JSONResponse(content={"pushed": True, "reason": reason})
+        return JSONResponse(status_code=422, content={"pushed": False, "reason": reason})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
 # ─── Catch-all reverse proxy route ──────────────────────────
 
 

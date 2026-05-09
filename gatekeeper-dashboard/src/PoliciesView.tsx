@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldAlert, Plus, Trash2, Shield, Globe } from 'lucide-react';
-import { fetchPolicies, createPolicy, deletePolicy, simulatePolicy, type Policy, type PolicySimulationResponse } from './api';
+import { ShieldAlert, Plus, Trash2, Shield, Globe, Code2, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { fetchPolicies, createPolicy, deletePolicy, simulatePolicy, fetchOpaPolicy, pushOpaPolicy, type Policy, type PolicySimulationResponse } from './api';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Card, CardContent } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
@@ -27,6 +27,33 @@ export default function PoliciesView() {
     const [simMethod, setSimMethod] = useState('GET');
     const [simResult, setSimResult] = useState<PolicySimulationResponse | null>(null);
     const [simulating, setSimulating] = useState(false);
+
+    // OPA hot-reload state
+    const [opaPolicy, setOpaPolicy] = useState<string>('');
+    const [opaSaving, setOpaSaving] = useState(false);
+    const [opaStatus, setOpaStatus] = useState<{ ok: boolean; message: string } | null>(null);
+    const [opaLoading, setOpaLoading] = useState(false);
+
+    const loadOpaPolicy = async () => {
+        setOpaLoading(true);
+        const policy = await fetchOpaPolicy();
+        if (policy !== null) setOpaPolicy(policy);
+        setOpaLoading(false);
+    };
+
+    const handleOpaDeploy = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setOpaSaving(true);
+        setOpaStatus(null);
+        try {
+            const result = await pushOpaPolicy(opaPolicy);
+            setOpaStatus({ ok: result.pushed, message: result.reason || (result.pushed ? 'Policy deployed' : 'Deploy failed') });
+        } catch (err: any) {
+            setOpaStatus({ ok: false, message: err.message || 'Deploy failed' });
+        } finally {
+            setOpaSaving(false);
+        }
+    };
 
     const handleSimulate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -258,6 +285,61 @@ export default function PoliciesView() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* OPA Policy Hot-Reload */}
+            <Card className="mb-8 border-2 border-surface-700 shadow-te bg-surface-950">
+                <CardContent className="p-0">
+                    <div className="flex border-b-2 border-surface-700 bg-surface-900 px-6 py-4 items-center gap-3">
+                        <Code2 className="h-5 w-5 text-yellow-400" />
+                        <h3 className="text-lg font-bold text-white uppercase tracking-widest">OPA Policy Engine</h3>
+                        <span className="ml-auto text-[10px] font-mono text-gray-500">hot-reload — no restart required</span>
+                    </div>
+                    <div className="p-6">
+                        <p className="text-gray-400 text-sm mb-4">
+                            Edit and deploy the live Rego authorization policy. Changes take effect immediately and invalidate the decision cache.
+                        </p>
+                        <div className="flex gap-3 mb-4">
+                            <Button
+                                variant="secondary"
+                                onClick={loadOpaPolicy}
+                                isLoading={opaLoading}
+                                className="border-2 border-surface-700"
+                            >
+                                <RefreshCw className={`mr-2 h-4 w-4 ${opaLoading ? 'animate-spin' : ''}`} />
+                                Load Current Policy
+                            </Button>
+                        </div>
+                        <form onSubmit={handleOpaDeploy} className="space-y-4">
+                            <textarea
+                                value={opaPolicy}
+                                onChange={e => setOpaPolicy(e.target.value)}
+                                rows={14}
+                                className="w-full rounded-none bg-black border-2 border-surface-700 px-4 py-3 text-sm text-brand-400 font-mono focus:outline-none focus:border-brand-500 resize-y"
+                                placeholder={`package gatekeeper.authz\n\ndefault allow = false\n\nallow {\n    input.user.roles[_] == "admin"\n}`}
+                                spellCheck={false}
+                            />
+                            <div className="flex items-center gap-4">
+                                <Button
+                                    type="submit"
+                                    isLoading={opaSaving}
+                                    disabled={!opaPolicy.trim()}
+                                    className="border-2 border-yellow-500/50 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20"
+                                >
+                                    Deploy Policy
+                                </Button>
+                                {opaStatus && (
+                                    <div className={`flex items-center gap-2 text-sm font-mono ${opaStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {opaStatus.ok
+                                            ? <CheckCircle className="h-4 w-4" />
+                                            : <XCircle className="h-4 w-4" />}
+                                        {opaStatus.message}
+                                    </div>
+                                )}
+                            </div>
+                        </form>
                     </div>
                 </CardContent>
             </Card>

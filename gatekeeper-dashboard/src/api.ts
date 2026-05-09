@@ -241,3 +241,40 @@ export async function deletePostureRule(ruleId: number): Promise<void> {
     });
     if (!res.ok) throw new Error(`Failed to delete posture rule: ${res.status}`);
 }
+
+// ─── Rate Limits ─────────────────────────────────
+
+export interface RateLimit {
+    key: string;
+    tier: string;
+    identifier: string;
+    count: number;
+    ttl_seconds: number;
+}
+
+export async function fetchRateLimits(): Promise<RateLimit[]> {
+    const res = await fetch(`${BASE}/admin/rate-limits`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`Failed to fetch rate limits: ${res.status}`);
+    const data = await res.json();
+    return data.data ?? [];
+}
+
+// ─── OPA Policy ──────────────────────────────────
+
+export async function fetchOpaPolicy(): Promise<string | null> {
+    const res = await fetch(`${BASE}/admin/opa/policy`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.policy ?? null;
+}
+
+export async function pushOpaPolicy(rego: string): Promise<{ pushed: boolean; reason: string }> {
+    const res = await fetch(`${BASE}/admin/opa/policy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ policy: rego }),
+    });
+    const data = await res.json();
+    return data;
+}

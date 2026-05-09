@@ -6,12 +6,30 @@ import { Button } from './components/ui/Button';
 import { Badge } from './components/ui/Badge';
 import { Card } from './components/ui/Card';
 import { formatDistanceToNow } from 'date-fns';
-import { Shield, Key, Clock, Trash2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Shield, Key, Clock, Trash2, RefreshCw, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+
+interface Toast {
+    id: number;
+    message: string;
+    ok: boolean;
+}
+
+let toastId = 0;
 
 export default function SessionsView() {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    const [confirmKill, setConfirmKill] = useState<string | null>(null);
+    const [confirmRevokeAll, setConfirmRevokeAll] = useState<{ userId: string; email: string } | null>(null);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    const addToast = (message: string, ok: boolean) => {
+        const id = ++toastId;
+        setToasts(t => [...t, { id, message, ok }]);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
+    };
 
     const load = useCallback(async () => {
         try {
@@ -29,22 +47,35 @@ export default function SessionsView() {
     useEffect(() => { load(); }, [load]);
 
     const handleKill = async (jti: string) => {
-        if (!confirm('Kill this session?')) return;
+        if (confirmKill !== jti) { setConfirmKill(jti); return; }
+        setConfirmKill(null);
+        setActionLoading(jti);
         try {
             await killSession(jti);
+            addToast('Session terminated', true);
             await load();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to kill session');
+            addToast(e instanceof Error ? e.message : 'Failed to kill session', false);
+        } finally {
+            setActionLoading(null);
         }
     };
 
     const handleRevokeAll = async (userId: string, email: string) => {
-        if (!confirm(`Revoke ALL sessions for ${email}?`)) return;
+        if (!confirmRevokeAll || confirmRevokeAll.userId !== userId) {
+            setConfirmRevokeAll({ userId, email });
+            return;
+        }
+        setConfirmRevokeAll(null);
+        setActionLoading(`revoke:${userId}`);
         try {
-            await revokeAllUserSessions(userId);
+            const count = await revokeAllUserSessions(userId);
+            addToast(`Revoked ${count} session${count !== 1 ? 's' : ''} for ${email}`, true);
             await load();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to revoke sessions');
+            addToast(e instanceof Error ? e.message : 'Failed to revoke sessions', false);
+        } finally {
+            setActionLoading(null);
         }
     };
 
@@ -57,6 +88,23 @@ export default function SessionsView() {
 
     return (
         <PageLayout>
+            {/* Toast notifications */}
+            <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+                {toasts.map(t => (
+                    <div
+                        key={t.id}
+                        className={`flex items-center gap-3 px-4 py-3 border-2 text-sm font-mono shadow-te animate-in fade-in slide-in-from-right-4 duration-200 ${
+                            t.ok
+                                ? 'bg-emerald-950 border-emerald-500/40 text-emerald-300'
+                                : 'bg-red-950 border-red-500/40 text-red-300'
+                        }`}
+                    >
+                        {t.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                        {t.message}
+                    </div>
+                ))}
+            </div>
+
             <PageHeader
                 title="Active Sessions"
                 description={`${sessions.length} active sessions across ${Object.keys(grouped).length} users`}
@@ -69,9 +117,28 @@ export default function SessionsView() {
             />
 
             {error && (
-                <div className="flex items-center p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm">
+                <div className="flex items-center p-4 bg-red-500/10 border border-red-500/20 text-red-300 text-sm mb-4">
                     <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
                     {error}
+                </div>
+            )}
+
+            {/* Inline confirm banners */}
+            {confirmRevokeAll && (
+                <div className="flex items-center gap-4 p-4 bg-red-950 border-2 border-red-500/40 text-red-300 text-sm mb-4">
+                    <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                    <span>Revoke ALL sessions for <strong>{confirmRevokeAll.email}</strong>? This will force re-login.</span>
+                    <div className="ml-auto flex gap-2">
+                        <Button
+                            size="sm"
+                            variant="destructive"
+                            isLoading={actionLoading === `revoke:${confirmRevokeAll.userId}`}
+                            onClick={() => handleRevokeAll(confirmRevokeAll.userId, confirmRevokeAll.email)}
+                        >
+                            Confirm Revoke
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setConfirmRevokeAll(null)}>Cancel</Button>
+                    </div>
                 </div>
             )}
 
@@ -87,6 +154,7 @@ export default function SessionsView() {
                         const email = userSessions[0].email;
                         const roles = userSessions[0].roles;
                         const isAdmin = roles.includes('admin');
+                        const isRevokingAll = actionLoading === `revoke:${userId}`;
 
                         return (
                             <Card key={userId} className="overflow-hidden border-2 border-surface-700 bg-surface-900 shadow-te">
@@ -118,44 +186,65 @@ export default function SessionsView() {
                                     </div>
                                     <Button
                                         variant="destructive"
+                                        isLoading={isRevokingAll}
                                         onClick={() => handleRevokeAll(userId, email)}
                                     >
-                                        Revoke All
+                                        {confirmRevokeAll?.userId === userId ? 'Confirm?' : 'Revoke All'}
                                     </Button>
                                 </div>
 
                                 <div className="divide-y divide-gray-800/50">
-                                    {userSessions.map(s => (
-                                        <div key={s.jti} className="flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                                            <div className="flex items-center gap-6">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Session ID (JTI)</span>
-                                                    <span className="text-sm text-brand-500 font-mono font-bold bg-surface-950 px-2 py-1 border-2 border-surface-700 shadow-te-sm">{s.jti}</span>
+                                    {userSessions.map(s => {
+                                        const isKilling = actionLoading === s.jti;
+                                        const needsConfirm = confirmKill === s.jti;
+                                        return (
+                                            <div key={s.jti} className="flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                                                <div className="flex items-center gap-6">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Session ID (JTI)</span>
+                                                        <span className="text-sm text-brand-500 font-mono font-bold bg-surface-950 px-2 py-1 border-2 border-surface-700 shadow-te-sm">{s.jti}</span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Created</span>
+                                                        <span className="text-sm text-white font-mono flex items-center gap-1.5">
+                                                            <Clock className="h-3.5 w-3.5 text-brand-500" />
+                                                            {formatDistanceToNow(new Date(s.created_at), { addSuffix: true })}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Expires In</span>
+                                                        <span className="text-sm text-white font-mono">{Math.floor(s.ttl_seconds / 60)}m {s.ttl_seconds % 60}s</span>
+                                                    </div>
                                                 </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Created</span>
-                                                    <span className="text-sm text-white font-mono flex items-center gap-1.5">
-                                                        <Clock className="h-3.5 w-3.5 text-brand-500" />
-                                                        {formatDistanceToNow(new Date(s.created_at), { addSuffix: true })}
-                                                    </span>
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Expires In</span>
-                                                    <span className="text-sm text-white font-mono">{Math.floor(s.ttl_seconds / 60)}m {s.ttl_seconds % 60}s</span>
+
+                                                <div className="flex items-center gap-2">
+                                                    {needsConfirm && (
+                                                        <span className="text-xs text-red-400 font-mono">Click again to confirm</span>
+                                                    )}
+                                                    <Button
+                                                        variant={needsConfirm ? 'destructive' : 'ghost'}
+                                                        size="icon"
+                                                        isLoading={isKilling}
+                                                        onClick={() => handleKill(s.jti)}
+                                                        className={needsConfirm ? '' : 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'}
+                                                        title="Kill Session"
+                                                    >
+                                                        {!isKilling && <Trash2 className="h-4 w-4" />}
+                                                    </Button>
+                                                    {needsConfirm && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => setConfirmKill(null)}
+                                                            className="text-gray-500 hover:text-gray-300"
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             </div>
-
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => handleKill(s.jti)}
-                                                className="text-gray-400 hover:text-red-400 hover:bg-red-500/10"
-                                                title="Kill Session"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </Card>
                         );

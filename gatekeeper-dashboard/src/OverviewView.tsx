@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchHealth, fetchMetrics, fetchTrafficMetrics, fetchAuditLogs, type TrafficMetric, type AuditLog } from './api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Skeleton } from './components/ui/Skeleton';
-import { Activity, Server, Users, ShieldAlert, AlertTriangle, Target, UserCog } from 'lucide-react';
+import { Activity, Server, ShieldAlert, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
     AreaChart,
@@ -16,16 +16,28 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 
+interface SseData {
+    timestamp: string;
+    audit_log_entries: number;
+    active_sessions: number;
+    rate_limited_keys: number;
+}
+
 export default function OverviewView() {
     const [proxyData, setProxyData] = useState<any>(null);
     const [backendData, setBackendData] = useState<any>(null);
     const [trafficData, setTrafficData] = useState<TrafficMetric[]>([]);
-    
+
     // Mission Control Telemetry Data
     const [recentBlocks, setRecentBlocks] = useState<AuditLog[]>([]);
     const [topPaths, setTopPaths] = useState<{path: string, count: number}[]>([]);
     const [topUsers, setTopUsers] = useState<{email: string, count: number}[]>([]);
-    
+
+    // SSE live counters
+    const [sseData, setSseData] = useState<SseData | null>(null);
+    const [sseConnected, setSseConnected] = useState(false);
+    const esRef = useRef<EventSource | null>(null);
+
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -91,8 +103,28 @@ export default function OverviewView() {
         }
         
         load();
-        const interval = setInterval(load, 30000); // Poll every 30s
+        const interval = setInterval(load, 30000);
         return () => clearInterval(interval);
+    }, []);
+
+    // SSE connection for live counters
+    useEffect(() => {
+        const es = new EventSource('/admin/stream');
+        esRef.current = es;
+        es.onopen = () => setSseConnected(true);
+        es.onmessage = (e) => {
+            try {
+                setSseData(JSON.parse(e.data));
+            } catch { /* ignore parse errors */ }
+        };
+        es.onerror = () => {
+            setSseConnected(false);
+            es.close();
+        };
+        return () => {
+            es.close();
+            setSseConnected(false);
+        };
     }, []);
 
     if (loading) {
@@ -162,18 +194,37 @@ export default function OverviewView() {
                     </CardContent>
                 </Card>
 
-                <Card className="bg-brand-500 border-2 border-surface-950 shadow-te">
+                {/* Live SSE counter card */}
+                <Card className={sseConnected ? "border-emerald-500/30" : "border-surface-700"}>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-bold text-black uppercase tracking-widest">Active Setup</CardTitle>
-                        <Users className="h-5 w-5 text-black" />
+                        <CardTitle className="text-sm font-medium text-gray-400">Live Feed</CardTitle>
+                        <Radio className={`h-4 w-4 ${sseConnected ? "text-emerald-400 animate-pulse" : "text-gray-600"}`} />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-black uppercase">Full Zero-Trust</div>
-                        <p className="text-xs text-black/80 mt-1 flex items-center gap-1 font-mono font-bold">
-                            MTLS + RBAC ENABLED
+                        <div className="text-2xl font-bold text-white">
+                            {sseData ? sseData.active_sessions : '--'}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Active sessions · {sseData ? `${sseData.rate_limited_keys} rate keys` : 'connecting...'}
                         </p>
                     </CardContent>
                 </Card>
+            </div>
+
+            {/* mTLS + Security posture strip */}
+            <div className="mt-4 grid grid-cols-3 gap-3">
+                {[
+                    { icon: Lock, label: 'mTLS', status: 'ENABLED', color: 'text-emerald-400' },
+                    { icon: ShieldAlert, label: 'RBAC', status: 'ENFORCED', color: 'text-brand-400' },
+                    { icon: Fingerprint, label: 'OPA', status: 'ACTIVE', color: 'text-yellow-400' },
+                ].map(({ icon: Icon, label, status, color }) => (
+                    <div key={label} className="flex items-center gap-3 px-4 py-2.5 bg-surface-900 border-2 border-surface-700">
+                        <div className={`h-1.5 w-1.5 rounded-full bg-current ${color} animate-pulse`} />
+                        <Icon className={`h-3.5 w-3.5 ${color}`} />
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${color}`}>{label}</span>
+                        <span className="ml-auto text-[10px] font-mono text-gray-500">{status}</span>
+                    </div>
+                ))}
             </div>
 
             {/* Row 2: Traffic Volume Chart */}

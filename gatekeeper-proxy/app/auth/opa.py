@@ -104,6 +104,39 @@ async def close_opa_client() -> None:
         _opa_client = None
 
 
+async def get_policy() -> str | None:
+    """Fetch the current Rego policy from OPA."""
+    try:
+        client = await _get_opa_client()
+        resp = await client.get("/v1/policies/gatekeeper_authz")
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("result", {}).get("raw", "")
+        return None
+    except Exception as exc:
+        logger.error("opa.get_policy_error", error=str(exc))
+        return None
+
+
+async def push_policy(rego_text: str) -> tuple[bool, str]:
+    """Push a new Rego policy to OPA and invalidate the decision cache."""
+    try:
+        client = await _get_opa_client()
+        resp = await client.put(
+            "/v1/policies/gatekeeper_authz",
+            content=rego_text.encode(),
+            headers={"Content-Type": "text/plain"},
+        )
+        if resp.status_code in (200, 201):
+            invalidate_cache()
+            logger.info("opa.policy_pushed", bytes=len(rego_text))
+            return True, "policy_updated"
+        return False, f"opa_error:{resp.status_code} {resp.text}"
+    except Exception as exc:
+        logger.error("opa.push_policy_error", error=str(exc))
+        return False, str(exc)
+
+
 async def evaluate_policy(
     *,
     method: str,
