@@ -35,11 +35,13 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 async def login(request: Request) -> RedirectResponse:
     """Redirect user to Google OAuth consent page."""
     if settings.dev_mode and settings.dev_login_enabled:
-        # In dev mode, redirect to the dev login form
         return RedirectResponse(url="/auth/dev-login")
 
     if not settings.google_client_id or not settings.google_client_secret:
-        return RedirectResponse(url="/auth/dev-login")
+        return JSONResponse(
+            status_code=501,
+            content={"error": "Google OAuth not configured", "detail": "Set GK_GOOGLE_CLIENT_ID and GK_GOOGLE_CLIENT_SECRET environment variables."},
+        )
 
     params = {
         "client_id": settings.google_client_id,
