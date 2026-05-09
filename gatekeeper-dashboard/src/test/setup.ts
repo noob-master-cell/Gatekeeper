@@ -1,21 +1,19 @@
+import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 
-// jsdom does not implement EventSource — stub it so components that use SSE don't throw
-class EventSourceStub {
-    static readonly CONNECTING = 0;
-    static readonly OPEN = 1;
-    static readonly CLOSED = 2;
-    readonly CONNECTING = 0;
-    readonly OPEN = 1;
-    readonly CLOSED = 2;
-    readyState = 0;
-    onopen: (() => void) | null = null;
-    onerror: (() => void) | null = null;
-    onmessage: ((e: MessageEvent) => void) | null = null;
-    constructor(public url: string) {}
-    addEventListener() {}
-    removeEventListener() {}
-    close() { this.readyState = 2; }
+// jsdom does not implement EventSource — stub it so SSE-using components don't throw
+function EventSourceStub(this: { readyState: number; onopen: null; onerror: null; onmessage: null; url: string }, url: string) {
+    this.url = url;
+    this.readyState = 0;
+    this.onopen = null;
+    this.onerror = null;
+    this.onmessage = null;
 }
+EventSourceStub.prototype.addEventListener = () => {};
+EventSourceStub.prototype.removeEventListener = () => {};
+EventSourceStub.prototype.close = function () { this.readyState = 2; };
+EventSourceStub.CONNECTING = 0;
+EventSourceStub.OPEN = 1;
+EventSourceStub.CLOSED = 2;
 
 vi.stubGlobal('EventSource', EventSourceStub);
