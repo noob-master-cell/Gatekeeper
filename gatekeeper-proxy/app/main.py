@@ -390,6 +390,29 @@ async def simulate_policy(request: Request):
     return JSONResponse(content=result)
 
 
+# ─── System status ──────────────────────────────────────────
+
+
+@app.get("/admin/status")
+async def admin_status(request: Request) -> JSONResponse:
+    """Return current proxy feature flags and system health."""
+    redis_ok = False
+    try:
+        r = get_redis()
+        await r.ping()
+        redis_ok = True
+    except Exception:
+        pass
+
+    return JSONResponse(content={
+        "opa_enabled": settings.opa_enabled,
+        "mtls_enabled": settings.mtls_enabled,
+        "redis_ok": redis_ok,
+        "dev_mode": settings.dev_mode,
+        "version": __version__,
+    })
+
+
 # ─── Rate limit counters ─────────────────────────────────────
 
 

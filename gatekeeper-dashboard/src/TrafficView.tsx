@@ -123,7 +123,20 @@ export default function TrafficView() {
                             <Filter className="mr-1.5 h-3.5 w-3.5" /> Filter
                         </Button>
                         {hasFilters && (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => { setEmail(''); setPath(''); setMethod(''); setStatusFilter(''); setTimeout(() => loadLogs(), 0); }}>
+                            <Button type="button" variant="ghost" size="sm" onClick={async () => {
+                                setEmail(''); setPath(''); setMethod(''); setStatusFilter('');
+                                try {
+                                    setLoading(true);
+                                    const res = await fetchAuditLogs({ count: 100 });
+                                    setLogs(res.data);
+                                    setNextCursor(res.next_cursor);
+                                    setError(null);
+                                } catch (e) {
+                                    setError('Failed to fetch logs: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                                } finally {
+                                    setLoading(false);
+                                }
+                            }}>
                                 <X className="mr-1.5 h-3.5 w-3.5" /> Clear
                             </Button>
                         )}
@@ -184,7 +197,7 @@ export default function TrafficView() {
                                                 <span className="text-slate-400 italic text-xs">anonymous</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{log.duration_ms.toFixed(1)}ms</td>
+                                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{log.duration_ms != null ? log.duration_ms.toFixed(1) : '—'}ms</td>
                                         <td className="px-4 py-3 font-mono text-xs text-slate-400">{log.client_ip}</td>
                                     </tr>
                                 ))}

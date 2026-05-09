@@ -121,6 +121,22 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
     return data.revoked_count;
 }
 
+// ─── System status ───────────────────────────────
+
+export interface SystemStatus {
+    opa_enabled: boolean;
+    mtls_enabled: boolean;
+    redis_ok: boolean;
+    dev_mode: boolean;
+    version: string;
+}
+
+export async function fetchAdminStatus(): Promise<SystemStatus> {
+    const res = await fetch(`${BASE}/admin/status`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
+    return res.json();
+}
+
 // ─── Metrics ─────────────────────────────────────
 
 export async function fetchMetrics(): Promise<MetricsData> {

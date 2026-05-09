@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchHealth, fetchMetrics, fetchTrafficMetrics, fetchAuditLogs, type TrafficMetric, type AuditLog } from './api';
+import { fetchHealth, fetchAdminStatus, fetchTrafficMetrics, fetchAuditLogs, type TrafficMetric, type AuditLog, type SystemStatus } from './api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Skeleton } from './components/ui/Skeleton';
-import { Activity, Server, ShieldCheck, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint, TrendingUp } from 'lucide-react';
+import { Activity, ShieldCheck, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint, TrendingUp, ShieldAlert, ShieldOff, Database, Wifi, WifiOff } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,7 +36,8 @@ function StatCard({ title, value, sub, icon: Icon, iconColor = 'text-slate-400',
 }
 
 export default function OverviewView() {
-    const [proxyData, setProxyData] = useState<any>(null);
+    const [health, setHealth] = useState<{ status: string; version: string } | null>(null);
+    const [sysStatus, setSysStatus] = useState<SystemStatus | null>(null);
     const [trafficData, setTrafficData] = useState<TrafficMetric[]>([]);
     const [recentBlocks, setRecentBlocks] = useState<AuditLog[]>([]);
     const [topPaths, setTopPaths] = useState<{ path: string; count: number }[]>([]);
@@ -47,16 +48,20 @@ export default function OverviewView() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let mounted = true;
         async function load() {
             try {
-                const [ph, pm, traffic, auditRes] = await Promise.all([
+                const [ph, status, traffic, auditRes] = await Promise.all([
                     fetchHealth().catch(() => null),
-                    fetchMetrics().catch(() => null),
+                    fetchAdminStatus().catch(() => null),
                     fetchTrafficMetrics().catch(() => []),
                     fetchAuditLogs({ count: 500 }).catch(() => ({ data: [] })),
                 ]);
 
-                setProxyData({ health: ph, metrics: pm });
+                if (!mounted) return;
+
+                setHealth(ph);
+                setSysStatus(status);
 
                 if (traffic?.length) {
                     setTrafficData(traffic);
@@ -71,18 +76,21 @@ export default function OverviewView() {
                 const logs: AuditLog[] = auditRes.data || [];
                 setRecentBlocks(logs.filter(l => l.status_code >= 400).slice(0, 6));
 
-                const pathMap = logs.reduce((a, l) => ({ ...a, [l.path]: (a[l.path] || 0) + 1 }), {} as Record<string, number>);
+                const pathMap = logs.reduce((a, l) => {
+                    if (!l.path) return a;
+                    return { ...a, [l.path]: (a[l.path] || 0) + 1 };
+                }, {} as Record<string, number>);
                 setTopPaths(Object.entries(pathMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, count]) => ({ path, count })));
 
                 const userMap = logs.reduce((a, l) => { const e = l.email || 'anonymous'; return { ...a, [e]: (a[e] || 0) + 1 }; }, {} as Record<string, number>);
                 setTopUsers(Object.entries(userMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([email, count]) => ({ email, count })));
             } finally {
-                setLoading(false);
+                if (mounted) setLoading(false);
             }
         }
         load();
         const iv = setInterval(load, 30000);
-        return () => clearInterval(iv);
+        return () => { mounted = false; clearInterval(iv); };
     }, []);
 
     // SSE live feed
@@ -95,7 +103,10 @@ export default function OverviewView() {
         return () => { es.close(); setSseConnected(false); };
     }, []);
 
-    const pOk = proxyData?.health?.status === 'ok';
+    const pOk = health?.status === 'ok';
+    const total24h = trafficData.reduce((s, h) => s + h.success + h.blocked, 0);
+    const blocked24h = trafficData.reduce((s, h) => s + h.blocked, 0);
+    const blockRate = total24h > 0 ? Math.round((blocked24h / total24h) * 100) : 0;
 
     if (loading) {
         return (
@@ -116,50 +127,87 @@ export default function OverviewView() {
             {/* Stats row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
-                    title="Proxy Status"
+                    title="Proxy"
                     value={pOk ? 'Healthy' : 'Offline'}
-                    sub={`v${proxyData?.health?.version || '—'}`}
+                    sub={`v${health?.version || '—'}`}
                     icon={Activity}
                     iconColor={pOk ? 'text-emerald-500' : 'text-red-500'}
                 />
                 <StatCard
-                    title="Uptime"
-                    value={proxyData?.metrics?.uptime_seconds
-                        ? `${Math.floor(proxyData.metrics.uptime_seconds / 3600)}h ${Math.floor((proxyData.metrics.uptime_seconds % 3600) / 60)}m`
-                        : '—'}
-                    sub={`Python ${proxyData?.metrics?.python_version || '—'}`}
-                    icon={Server}
-                    iconColor="text-slate-400"
+                    title="Requests (24h)"
+                    value={total24h > 0 ? total24h.toLocaleString() : '—'}
+                    sub={total24h > 0 ? `${blocked24h.toLocaleString()} blocked` : 'No traffic yet'}
+                    icon={TrendingUp}
+                    iconColor="text-blue-400"
                 />
                 <StatCard
-                    title="Live Sessions"
+                    title="Block Rate (24h)"
+                    value={total24h > 0 ? `${blockRate}%` : '—'}
+                    sub={total24h > 0 ? `${(total24h - blocked24h).toLocaleString()} allowed` : 'No data'}
+                    icon={ShieldAlert}
+                    iconColor={blockRate > 20 ? 'text-red-500' : blockRate > 5 ? 'text-amber-500' : 'text-emerald-500'}
+                    accent={blockRate > 20}
+                />
+                <StatCard
+                    title="Active Sessions"
                     value={sseData ? String(sseData.active_sessions) : '—'}
                     sub={sseConnected ? 'Streaming live' : 'Connecting…'}
                     icon={Radio}
                     iconColor={sseConnected ? 'text-emerald-500' : 'text-slate-300'}
                 />
-                <StatCard
-                    title="Rate Limit Keys"
-                    value={sseData ? String(sseData.rate_limited_keys) : '—'}
-                    sub="Active windows in Redis"
-                    icon={TrendingUp}
-                    iconColor="text-brand-400"
-                    accent={!!sseData && sseData.rate_limited_keys > 0}
-                />
             </div>
 
-            {/* Security posture pills */}
+            {/* Security posture pills — dynamic */}
             <div className="flex flex-wrap gap-2">
-                {[
-                    { icon: Lock,        label: 'mTLS Enabled',   color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                    { icon: ShieldCheck, label: 'RBAC Enforced',  color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                    { icon: Fingerprint, label: 'OPA Active',     color: 'bg-amber-50 text-amber-700 border-amber-200' },
-                ].map(({ icon: Icon, label, color }) => (
-                    <div key={label} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${color}`}>
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
+                {/* Proxy health */}
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${pOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                    <Activity className="h-3.5 w-3.5" />
+                    Proxy {pOk ? 'Online' : 'Offline'}
+                </div>
+
+                {/* mTLS */}
+                {sysStatus && (
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${sysStatus.mtls_enabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                        <Lock className="h-3.5 w-3.5" />
+                        mTLS {sysStatus.mtls_enabled ? 'On' : 'Off'}
                     </div>
-                ))}
+                )}
+
+                {/* RBAC — always enforced */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium bg-blue-50 text-blue-700 border-blue-200">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    RBAC Active
+                </div>
+
+                {/* OPA */}
+                {sysStatus && (
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${sysStatus.opa_enabled ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                        <Fingerprint className="h-3.5 w-3.5" />
+                        OPA {sysStatus.opa_enabled ? 'Evaluating' : 'Disabled'}
+                    </div>
+                )}
+
+                {/* Redis */}
+                {sysStatus && (
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${sysStatus.redis_ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                        <Database className="h-3.5 w-3.5" />
+                        Redis {sysStatus.redis_ok ? 'Connected' : 'Down'}
+                    </div>
+                )}
+
+                {/* Dev mode warning */}
+                {sysStatus?.dev_mode && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium bg-amber-50 text-amber-700 border-amber-200">
+                        <ShieldOff className="h-3.5 w-3.5" />
+                        Dev Mode
+                    </div>
+                )}
+
+                {/* SSE connection */}
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${sseConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                    {sseConnected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                    {sseConnected ? 'Live Feed' : 'Feed Offline'}
+                </div>
             </div>
 
             {/* Traffic chart */}

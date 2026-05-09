@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ShieldAlert, Plus, Trash2, Smartphone, Monitor, Globe, X } from 'lucide-react';
 import { fetchPostureRules, createPostureRule, deletePostureRule, type DevicePostureRule } from './api';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
@@ -18,13 +18,22 @@ export default function PostureView() {
     const [newValue, setNewValue] = useState('');
     const [newDescription, setNewDescription] = useState('');
 
+    const mountedRef = useRef(true);
+    useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+
     const loadRules = async () => {
-        try { setLoading(true); setError(null); setRules(await fetchPostureRules()); }
-        catch (err: any) { setError(err.message || 'Failed to fetch rules'); }
-        finally { setLoading(false); }
+        try {
+            setLoading(true); setError(null);
+            const data = await fetchPostureRules();
+            if (mountedRef.current) setRules(data);
+        } catch (err: any) {
+            if (mountedRef.current) setError(err.message || 'Failed to fetch rules');
+        } finally {
+            if (mountedRef.current) setLoading(false);
+        }
     };
 
-    useEffect(() => { loadRules(); }, []);
+    useEffect(() => { loadRules(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleDelete = async (id: number) => {
         if (!window.confirm('Delete this posture rule?')) return;

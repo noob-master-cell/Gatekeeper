@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from './api';
 import { fetchSessions, killSession, revokeAllUserSessions } from './api';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
@@ -19,11 +19,17 @@ export default function SessionsView() {
     const [confirmKill, setConfirmKill] = useState<string | null>(null);
     const [confirmRevokeAll, setConfirmRevokeAll] = useState<{ userId: string; email: string } | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const toastTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+    useEffect(() => {
+        return () => { toastTimers.current.forEach(clearTimeout); };
+    }, []);
 
     const addToast = (message: string, ok: boolean) => {
         const id = ++toastId;
         setToasts(t => [...t, { id, message, ok }]);
-        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
+        const timer = setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
+        toastTimers.current.push(timer);
     };
 
     const load = useCallback(async () => {
