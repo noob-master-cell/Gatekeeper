@@ -14,15 +14,16 @@ const TIER_BADGE: Record<string, string> = {
     ip:      'bg-red-50 text-red-600 border-red-200',
 };
 
-function CountBar({ count, max }: { count: number; max: number }) {
-    const pct = max > 0 ? Math.min((count / max) * 100, 100) : 0;
-    const color = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-emerald-500';
+function TokenBar({ tokens, max }: { tokens: number; max: number }) {
+    const pct = max > 0 ? Math.min((tokens / max) * 100, 100) : 0;
+    // Low tokens = exhausted bucket = red; high = healthy = green
+    const color = pct < 20 ? 'bg-red-500' : pct < 50 ? 'bg-amber-500' : 'bg-emerald-500';
     return (
         <div className="flex items-center gap-3">
             <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
             </div>
-            <span className="text-xs font-semibold text-slate-700 w-8 text-right tabular-nums">{count}</span>
+            <span className="text-xs font-semibold text-slate-700 w-10 text-right tabular-nums">{tokens.toFixed(1)}</span>
         </div>
     );
 }
@@ -51,7 +52,7 @@ export default function RateLimitsView() {
         return () => clearInterval(iv);
     }, [load]);
 
-    const maxCount = limits.length > 0 ? Math.max(...limits.map(l => l.count)) : 1;
+    const maxTokens = limits.length > 0 ? Math.max(...limits.map(l => l.tokens_remaining)) : 1;
 
     if (loading && limits.length === 0) {
         return (
@@ -84,7 +85,7 @@ export default function RateLimitsView() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                     { label: 'Active Keys',     value: String(limits.length),                                      icon: Gauge,     color: 'text-slate-500' },
-                    { label: 'Total Requests',  value: String(limits.reduce((a, l) => a + l.count, 0)),            icon: Zap,       color: 'text-amber-500' },
+                    { label: 'Exhausted Keys',  value: String(limits.filter(l => l.tokens_remaining < 5).length),  icon: Zap,       color: 'text-amber-500' },
                     { label: 'Unique Tiers',    value: String(new Set(limits.map(l => l.tier)).size),              icon: Hash,      color: 'text-blue-500' },
                     { label: 'Last Updated',    value: lastRefresh?.toLocaleTimeString() ?? '—',                   icon: RefreshCw, color: 'text-slate-400' },
                 ].map(({ label, value, icon: Icon, color }) => (
@@ -112,14 +113,14 @@ export default function RateLimitsView() {
                         <CardTitle className="text-sm flex items-center gap-2">
                             <Gauge className="h-4 w-4 text-slate-500" /> Active Windows
                         </CardTitle>
-                        <CardDescription>Sorted by request volume</CardDescription>
+                        <CardDescription>Sorted by fewest tokens remaining (most active first)</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left whitespace-nowrap">
                                 <thead className="bg-slate-50 border-y border-slate-200">
                                     <tr>
-                                        {['Tier','Identifier','Count','TTL','Redis Key'].map(h => (
+                                        {['Tier','Identifier','Tokens Left','TTL','Redis Key'].map(h => (
                                             <th key={h} className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
                                         ))}
                                     </tr>
@@ -134,7 +135,7 @@ export default function RateLimitsView() {
                                             </td>
                                             <td className="px-4 py-3 font-mono text-xs text-slate-700 max-w-[200px] truncate" title={limit.identifier}>{limit.identifier}</td>
                                             <td className="px-4 py-3 min-w-[160px]">
-                                                <CountBar count={limit.count} max={maxCount} />
+                                                <TokenBar tokens={limit.tokens_remaining} max={maxTokens} />
                                             </td>
                                             <td className="px-4 py-3">
                                                 {limit.ttl_seconds > 0 ? (

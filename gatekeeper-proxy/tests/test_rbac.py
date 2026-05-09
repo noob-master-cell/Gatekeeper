@@ -346,8 +346,8 @@ async def test_hr_route_allowed_for_hr_role(client: AsyncClient):
             "/api/hr/employees",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
         )
-    # Should pass RBAC (502 because backend isn't running)
-    assert response.status_code == 502
+    # Should pass RBAC (200 if backend running, 502 if not)
+    assert response.status_code in (200, 502)
 
 
 @pytest.mark.asyncio

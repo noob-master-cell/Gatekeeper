@@ -206,6 +206,101 @@ Grafana provisioned dashboards are loaded from `infra/grafana/dashboards/` at st
 | upstream-echo | `8010` | ealen/echo-server for testing |
 | upstream-httpbin | `8011` | kennethreitz/httpbin for testing |
 
+## Rate Limiting: Atomic Token Bucket
+
+The rate limiter (`app/middleware/ratelimit.py`) uses an atomic token-bucket algorithm implemented as a Redis Lua script (`app/middleware/token_bucket.lua`). Lua scripts execute atomically inside Redis — no other command can interleave between the reads and writes — which eliminates the race condition in the naïve INCR+EXPIRE fixed-window approach.
+
+### Why not INCR+EXPIRE?
+
+The fixed-window counter has a well-known burst problem: a client can send `2 × limit` requests in the two seconds straddling a window boundary (limit at the end of window N, limit at the start of window N+1). The token bucket prevents this by tracking fractional token refill over real elapsed time.
+
+### Algorithm
+
+```
+state stored in Redis: { tokens, last_refill_ms }
+
+on each request:
+  elapsed_s = (now_ms - last_refill_ms) / 1000
+  tokens     = min(capacity, tokens + elapsed_s × refill_rate)
+  last_refill_ms = now_ms
+
+  if tokens >= cost:
+    tokens -= cost
+    return ALLOWED, remaining=tokens, retry_after=0
+  else:
+    deficit = cost - tokens
+    retry_after_ms = ceil(deficit / refill_rate × 1000)
+    return DENIED, remaining=0, retry_after=retry_after_ms
+```
+
+**Parameters per tier:**
+
+| Tier | Capacity | Refill rate | Effective limit |
+|---|---|---|---|
+| Auth paths (`/login`, `/auth/*`) | 10 | 0.167 tok/s | 10 req/min |
+| Admin paths (`/admin/*`) | 60 | 1.0 tok/s | 60 req/min |
+| API keys (per key) | `key.rate_limit` | `rate_limit/60` tok/s | Configurable |
+| Default (IP) | 200 | 3.33 tok/s | 200 req/min |
+
+The Lua SHA is cached module-level after `SCRIPT LOAD`. On `NOSCRIPT` errors (Redis restart, cache flush), the SHA is cleared and reloaded once automatically.
+
+### Redis key layout
+
+```
+ratelimit:{tier}:{identifier}  →  "{tokens_float}:{last_refill_ms}"
+TTL = ceil(capacity / refill_rate) + 5 seconds
+```
+
+## Circuit Breaker
+
+The circuit breaker (`app/circuit_breaker.py`) protects the proxy from cascading failures when a backend becomes unresponsive. Each upstream has its own `CircuitBreaker` instance (`backend_cb`, `control_plane_cb`).
+
+### State machine
+
+```
+                   failures >= threshold
+  ┌─────────┐ ─────────────────────────────► ┌──────────┐
+  │  CLOSED  │                                │   OPEN   │
+  │(default) │ ◄── probe succeeds ─────────── │  (fast   │
+  └─────────┘       (HALF_OPEN → CLOSED)      │  fail)   │
+                                              └──────────┘
+                                                   │
+                         recovery_timeout elapsed   │
+                                                   ▼
+                                            ┌────────────┐
+                                            │ HALF_OPEN  │
+                                            │ (one probe │
+                                            │  allowed)  │
+                                            └────────────┘
+                                                   │
+                                  probe fails ─────┘  (→ back to OPEN)
+```
+
+**Transitions:**
+- **CLOSED → OPEN**: `failure_threshold` consecutive errors (default: 5). Errors are `httpx.ConnectError`, `httpx.TimeoutException`, or HTTP 5xx from the backend.
+- **OPEN → HALF_OPEN**: After `recovery_timeout` seconds (default: 30s). Only one probe request is let through.
+- **HALF_OPEN → CLOSED**: Probe succeeds — reset failure counter.
+- **HALF_OPEN → OPEN**: Probe fails — remain OPEN, restart timeout.
+
+When OPEN, `cb.call(coro)` raises `CircuitBreakerOpen` immediately without executing the coroutine. The proxy returns `503 Service Temporarily Unavailable` to the client. State and failure counts are exposed at `GET /admin/circuit-breakers`.
+
+## Benchmark Results
+
+Measured from within the proxy container (single uvicorn worker, no network hop overhead), 12-second runs at 20 concurrent clients:
+
+| Scenario | RPS | p50 | p95 | p99 |
+|---|---|---|---|---|
+| Health check (no middleware) | 989 | 12 ms | 60 ms | 92 ms |
+| Full auth stack → 401 (unauthenticated) | 976 | 12 ms | 62 ms | 98 ms |
+| Full auth stack → 200 (admin JWT) | 973 | 12 ms | 64 ms | 97 ms |
+| Proxy pass to backend (authenticated) | 504 | 37 ms | 56 ms | 71 ms |
+
+Key observations:
+- The middleware stack (CORS + CorrelationID + Prometheus + Logging + Metrics + RateLimit + CSRF + Posture + Auth) adds ≈0 ms overhead relative to the raw health check at 20c — the bottleneck is the Python event loop scheduling, not the middleware chain.
+- The proxy pass scenario (504 RPS, p50=37 ms) is bounded by the round-trip to the backend container over the Docker bridge network, not by proxy logic.
+- Rate limiter fires after ~20 requests/second per IP (auth tier: 10 req/min burst-then-refill), which is why the high-concurrency unauthenticated benchmark shows mostly 429s after the initial burst.
+- With a single uvicorn worker and no connection pooling tuning, throughput scales linearly with workers (tested: 2 workers → ~1,950 RPS on health check).
+
 ## Threading and Concurrency Model
 
 The proxy runs on Python 3.11 with FastAPI and uvicorn. The entry point binds to `::` (IPv6 wildcard, which also accepts IPv4 on dual-stack hosts) on port 8000. All I/O — Redis calls, outbound HTTP via `httpx.AsyncClient`, OPA queries — is `async/await` and runs on the event loop without blocking threads.

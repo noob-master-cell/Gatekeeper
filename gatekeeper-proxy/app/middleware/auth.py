@@ -28,6 +28,7 @@ logger = structlog.get_logger()
 # Routes that do NOT require authentication
 PUBLIC_ROUTES = frozenset(
     {
+        "/",
         "/login",
         "/auth/callback/google",
         "/auth/dev-login",

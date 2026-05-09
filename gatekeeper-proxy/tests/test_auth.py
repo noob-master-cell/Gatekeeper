@@ -152,9 +152,10 @@ async def test_public_routes_no_auth(client: AsyncClient):
     response = await client.get("/.well-known/jwks.json")
     assert response.status_code == 200
 
-    # Login is public
+    # Login is public — 302/307 when auth is configured, 501 when neither
+    # Google OAuth nor dev mode is active (valid unconfigured state)
     response = await client.get("/login", follow_redirects=False)
-    assert response.status_code in (200, 302, 307)
+    assert response.status_code in (200, 302, 307, 501)
 
 
 @pytest.mark.asyncio
@@ -179,8 +180,8 @@ async def test_protected_route_with_valid_bearer_token(client: AsyncClient):
         "/api/hr/employees",
         headers={"Authorization": f"Bearer {token}"},
     )
-    # Should forward to backend (502 since backend isn't running in test)
-    assert response.status_code == 502
+    # Auth passed — proxy forwards to backend (200 if running, 502 if not)
+    assert response.status_code in (200, 502)
 
 
 @pytest.mark.asyncio
@@ -192,8 +193,8 @@ async def test_protected_route_with_valid_cookie(client: AsyncClient):
         "/api/hr/employees",
         cookies={"gatekeeper_token": token},
     )
-    # Should forward to backend (502 since backend isn't running in test)
-    assert response.status_code == 502
+    # Auth passed — proxy forwards to backend (200 if running, 502 if not)
+    assert response.status_code in (200, 502)
 
 
 @pytest.mark.asyncio

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchHealth, fetchAdminStatus, fetchTrafficMetrics, fetchAuditLogs, type TrafficMetric, type AuditLog, type SystemStatus } from './api';
+import { fetchHealth, fetchAdminStatus, fetchTrafficMetrics, fetchAuditLogs, type TrafficMetric, type AuditLog, type SystemStatus, type CircuitBreakerStatus } from './api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { PageHeader, PageLayout } from './components/ui/PageLayout';
 import { Skeleton } from './components/ui/Skeleton';
-import { Activity, ShieldCheck, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint, TrendingUp, ShieldAlert, ShieldOff, Database, Wifi, WifiOff } from 'lucide-react';
+import { Activity, ShieldCheck, AlertTriangle, Target, UserCog, Radio, Lock, Fingerprint, TrendingUp, ShieldAlert, ShieldOff, Database, Wifi, WifiOff, Zap } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -202,6 +202,22 @@ export default function OverviewView() {
                         Dev Mode
                     </div>
                 )}
+
+                {/* Circuit breakers */}
+                {sysStatus?.circuit_breakers?.map((cb: CircuitBreakerStatus) => {
+                    const isOpen = cb.state === 'open';
+                    const isHalf = cb.state === 'half_open';
+                    return (
+                        <div key={cb.name} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${
+                            isOpen ? 'bg-red-50 text-red-700 border-red-200' :
+                            isHalf ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        }`}>
+                            <Zap className="h-3.5 w-3.5" />
+                            CB:{cb.name} {isOpen ? 'OPEN' : isHalf ? 'HALF' : 'OK'}
+                        </div>
+                    );
+                })}
 
                 {/* SSE connection */}
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${sseConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>

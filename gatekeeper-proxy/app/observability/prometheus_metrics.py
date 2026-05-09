@@ -170,6 +170,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
         ACTIVE_CONNECTIONS.inc()
         start = time.monotonic()
+        response = None
 
         try:
             response = await call_next(request)
@@ -195,7 +196,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
             ).observe(duration)
 
             # Track response size
-            resp_size = response.headers.get("content-length")
+            resp_size = response.headers.get("content-length") if response is not None else None
             if resp_size:
                 try:
                     RESPONSE_SIZE.labels(

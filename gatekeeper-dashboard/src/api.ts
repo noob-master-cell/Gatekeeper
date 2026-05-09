@@ -116,12 +116,22 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
 
 // ─── System status ───────────────────────────────
 
+export interface CircuitBreakerStatus {
+    name: string;
+    state: 'closed' | 'open' | 'half_open';
+    failures: number;
+    threshold: number;
+    opened_at: string | null;
+    recovery_in_s: number | null;
+}
+
 export interface SystemStatus {
     opa_enabled: boolean;
     mtls_enabled: boolean;
     redis_ok: boolean;
     dev_mode: boolean;
     version: string;
+    circuit_breakers?: CircuitBreakerStatus[];
 }
 
 export async function fetchAdminStatus(): Promise<SystemStatus> {
@@ -297,7 +307,7 @@ export interface RateLimit {
     key: string;
     tier: string;
     identifier: string;
-    count: number;
+    tokens_remaining: number;
     ttl_seconds: number;
 }
 

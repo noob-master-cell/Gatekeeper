@@ -10,6 +10,11 @@ services:
     build:
       context: ../gatekeeper-proxy
       dockerfile: Dockerfile
+    # Override Dockerfile CMD: bind to 0.0.0.0 locally so Docker Desktop forwards
+    # host connections correctly. Railway overrides this with --host :: via env.
+    command: >
+      sh -c "python -c 'from app.auth.keys import initialize_keys; initialize_keys()'
+      && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
     ports:
       - "8000:8000"
     environment:
@@ -37,6 +42,7 @@ services:
       - GK_ENVIRONMENT=development
     volumes:
       - proxy_keys:/tmp/gatekeeper_keys
+      - ../gatekeeper-dashboard/dist:/tmp/gatekeeper/public:ro
     depends_on:
       backend:
         condition: service_healthy

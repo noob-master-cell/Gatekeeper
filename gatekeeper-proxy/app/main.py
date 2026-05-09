@@ -26,6 +26,7 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.metrics import MetricsMiddleware
 from app.middleware.posture import DevicePostureMiddleware, sync_posture_rules
 from app.middleware.ratelimit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -113,15 +114,17 @@ instrument_fastapi(app)
 # 3. Correlation ID — every request gets a unique ID
 # 4. Prometheus — collects latency, counts, active connections
 # 5. Logging — structured request logging with audit trail
-# 6. Rate Limiting — token bucket per IP + per API key
-# 7. CSRF — validates Origin header on state-changing requests
-# 8. Device Posture — blocks bad IPs/UAs before auth
-# 9. Auth — JWT + API keys + Redis sessions + RBAC + OPA
+# 6. Metrics — Redis-backed traffic counters for the 24h dashboard graph
+# 7. Rate Limiting — token bucket per IP + per API key
+# 8. CSRF — validates Origin header on state-changing requests
+# 9. Device Posture — blocks bad IPs/UAs before auth
+# 10. Auth — JWT + API keys + Redis sessions + RBAC + OPA
 
 app.add_middleware(AuthMiddleware)
 app.add_middleware(DevicePostureMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(PrometheusMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
@@ -437,20 +440,27 @@ async def list_rate_limits(request: Request) -> JSONResponse:
         r = get_redis()
         results = []
         async for key in r.scan_iter("ratelimit:*"):
-            count = await r.get(key)
             ttl = await r.ttl(key)
             key_str = key if isinstance(key, str) else key.decode()
             parts = key_str.split(":", 2)
             tier = parts[1] if len(parts) > 1 else "unknown"
             identifier = parts[2] if len(parts) > 2 else key_str
+
+            # Token bucket stores a hash: {tokens, ts}
+            bucket = await r.hgetall(key)
+            if bucket:
+                tokens_remaining = float(bucket.get(b"tokens", bucket.get("tokens", 0)))
+            else:
+                tokens_remaining = 0
+
             results.append({
                 "key": key_str,
                 "tier": tier,
                 "identifier": identifier,
-                "count": int(count) if count else 0,
+                "tokens_remaining": round(tokens_remaining, 2),
                 "ttl_seconds": ttl,
             })
-        results.sort(key=lambda x: x["count"], reverse=True)
+        results.sort(key=lambda x: x["tokens_remaining"])
         return JSONResponse(content={"data": results, "count": len(results)})
     except RuntimeError:
         return JSONResponse(content={"data": [], "count": 0, "note": "Redis not initialized"})
