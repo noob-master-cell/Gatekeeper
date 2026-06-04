@@ -63,14 +63,19 @@ export default function App() {
                 <Topbar user={user} />
 
                 <main className="flex-1 overflow-y-auto">
-                    {view === 'overview'   && <OverviewView />}
-                    {view === 'traffic'    && <TrafficView />}
-                    {view === 'sessions'   && <SessionsView />}
-                    {view === 'users'      && <UsersView />}
-                    {view === 'policies'   && <PoliciesView />}
-                    {view === 'posture'    && <PostureView />}
-                    {view === 'ratelimits' && <RateLimitsView />}
-                    {view === 'apikeys'    && <ApiKeysView />}
+                    {(() => {
+                        const isAdmin = user.roles.includes('admin');
+                        return <>
+                            {view === 'overview'   && <OverviewView />}
+                            {view === 'traffic'    && <TrafficView />}
+                            {view === 'sessions'   && <SessionsView isAdmin={isAdmin} />}
+                            {view === 'users'      && <UsersView isAdmin={isAdmin} />}
+                            {view === 'policies'   && <PoliciesView />}
+                            {view === 'posture'    && <PostureView />}
+                            {view === 'ratelimits' && <RateLimitsView />}
+                            {view === 'apikeys'    && <ApiKeysView isAdmin={isAdmin} />}
+                        </>;
+                    })()}
                 </main>
             </div>
         </div>

@@ -40,6 +40,12 @@ is_hr_path        if startswith(input.path, "/api/hr/")
 is_admin_path     if startswith(input.path, "/admin/")
 is_api_admin_path if startswith(input.path, "/api/admin/")
 
+# Paths that require admin for ANY method (including GET)
+admin_only_paths := {
+    "/admin/sessions/revoke",
+}
+
+# Paths that require admin for writes; authenticated users can read
 sensitive_paths := {
     "/admin/audit-logs",
     "/admin/sessions/revoke",
@@ -68,8 +74,14 @@ is_time_gated    if {
     not in_business_hours
 }
 is_sensitive_nonadmin if {
+    input.path in admin_only_paths
+    not is_admin
+}
+
+is_sensitive_write_nonadmin if {
     input.path in sensitive_paths
     not is_admin
+    is_write_method
 }
 is_hr_write_denied if {
     "hr" in input.user.roles
@@ -107,6 +119,16 @@ allow if {
     is_admin
     is_admin_path
     not (input.path in sensitive_paths)
+}
+
+# Authenticated user — read-only on /admin/* (writes and admin-only paths still blocked)
+allow if {
+    not is_blocked_ip
+    is_authenticated
+    is_admin_path
+    is_read_method
+    not is_sensitive_nonadmin
+    not is_sensitive_write_nonadmin
 }
 
 # Admin — /api/admin/*
@@ -162,6 +184,7 @@ public_paths := {
     "/.well-known/jwks.json",
     "/login",
     "/auth/dev-login",
+    "/auth/demo",
     "/auth/logout",
     "/oauth/callback",
     "/auth/callback/google",
@@ -185,6 +208,13 @@ reason := "sensitive_endpoint_admin_only" if {
     not is_blocked_ip
     not is_time_gated
     is_sensitive_nonadmin
+}
+
+reason := "sensitive_write_denied" if {
+    not is_blocked_ip
+    not is_time_gated
+    not is_sensitive_nonadmin
+    is_sensitive_write_nonadmin
 }
 
 reason := "hr_write_denied" if {

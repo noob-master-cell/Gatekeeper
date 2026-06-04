@@ -367,6 +367,54 @@ async def dev_login_submit(request: Request) -> Response:
     return response
 
 
+# ─── One-click demo login ────────────────────────────────────
+
+
+@router.get("/auth/demo")
+async def demo_login(request: Request) -> Response:
+    """Issue a read-only demo session in one click (dev mode only).
+
+    Lets portfolio reviewers access the dashboard without a Google account.
+    """
+    if not settings.dev_mode:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Demo login is not available in production"},
+        )
+
+    email = "demo@gatekeeper.local"
+    user_id = "demo-user"
+    roles = ["user"]  # read-only — no admin mutations
+
+    logger.info("auth.demo_login", email=email)
+
+    access_token = create_access_token(user_id=user_id, email=email, roles=roles)
+
+    try:
+        claims = verify_access_token(access_token)
+        await create_session(
+            jti=claims.jti,
+            user_id=user_id,
+            email=email,
+            roles=roles,
+            ttl_seconds=settings.jwt_expiry_minutes * 60,
+        )
+    except Exception as exc:
+        logger.warning("auth.demo_session_failed", error=str(exc))
+
+    response = RedirectResponse(url="/", status_code=302)
+    response.set_cookie(
+        key="gatekeeper_token",
+        value=access_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.jwt_expiry_minutes * 60,
+        path="/",
+    )
+    return response
+
+
 # ─── Logout ───────────────────────────────────────────────────
 
 

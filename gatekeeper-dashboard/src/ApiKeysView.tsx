@@ -9,6 +9,7 @@ import {
     Key, Plus, Trash2, Copy, Check, AlertTriangle, RefreshCw,
     Clock, Zap, X, ShieldCheck, Eye, EyeOff,
 } from 'lucide-react';
+import { maskEmail } from './lib/utils';
 
 const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400';
 
@@ -83,7 +84,7 @@ function NewKeyBanner({ created, onDismiss }: { created: CreatedApiKey; onDismis
     );
 }
 
-export default function ApiKeysView() {
+export default function ApiKeysView({ isAdmin = false }: { isAdmin?: boolean }) {
     const [keys, setKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -177,9 +178,11 @@ export default function ApiKeysView() {
                         <Button variant="outline" size="sm" onClick={load} isLoading={loading}>
                             <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                         </Button>
-                        <Button size="sm" variant={isAdding ? 'secondary' : 'default'} onClick={() => { setIsAdding(!isAdding); setFormError(null); }}>
-                            {isAdding ? <><X className="mr-1.5 h-4 w-4" /> Cancel</> : <><Plus className="mr-1.5 h-4 w-4" /> New Key</>}
-                        </Button>
+                        {isAdmin && (
+                            <Button size="sm" variant={isAdding ? 'secondary' : 'default'} onClick={() => { setIsAdding(!isAdding); setFormError(null); }}>
+                                {isAdding ? <><X className="mr-1.5 h-4 w-4" /> Cancel</> : <><Plus className="mr-1.5 h-4 w-4" /> New Key</>}
+                            </Button>
+                        )}
                     </div>
                 }
             />
@@ -322,7 +325,9 @@ export default function ApiKeysView() {
                                                 <td className="px-4 py-3 text-sm font-medium text-slate-800">{k.name}</td>
 
                                                 {/* Owner */}
-                                                <td className="px-4 py-3 text-xs text-slate-500 max-w-[160px] truncate" title={k.owner}>{k.owner}</td>
+                                                <td className="px-4 py-3 text-xs text-slate-500 max-w-[160px] truncate" title={isAdmin ? k.owner : undefined}>
+                                                    {isAdmin ? k.owner : maskEmail(k.owner)}
+                                                </td>
 
                                                 {/* Roles */}
                                                 <td className="px-4 py-3">
@@ -357,38 +362,40 @@ export default function ApiKeysView() {
 
                                                 {/* Actions */}
                                                 <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        {needsConfirm && (
-                                                            <>
-                                                                <span className="text-xs text-red-500 font-medium">Confirm?</span>
+                                                    {isAdmin && (
+                                                        <div className="flex items-center gap-2">
+                                                            {needsConfirm && (
+                                                                <>
+                                                                    <span className="text-xs text-red-500 font-medium">Confirm?</span>
+                                                                    <Button
+                                                                        variant="destructive" size="sm"
+                                                                        isLoading={isRevoking}
+                                                                        onClick={() => handleRevoke(k.key_hash)}
+                                                                        className="h-7 text-xs px-2"
+                                                                    >
+                                                                        Revoke
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost" size="sm"
+                                                                        onClick={() => setConfirmRevoke(null)}
+                                                                        className="h-7 text-xs px-2"
+                                                                    >
+                                                                        Cancel
+                                                                    </Button>
+                                                                </>
+                                                            )}
+                                                            {!needsConfirm && (
                                                                 <Button
-                                                                    variant="destructive" size="sm"
+                                                                    variant="ghost" size="icon"
                                                                     isLoading={isRevoking}
                                                                     onClick={() => handleRevoke(k.key_hash)}
-                                                                    className="h-7 text-xs px-2"
+                                                                    className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
                                                                 >
-                                                                    Revoke
+                                                                    {!isRevoking && <Trash2 className="h-3.5 w-3.5" />}
                                                                 </Button>
-                                                                <Button
-                                                                    variant="ghost" size="sm"
-                                                                    onClick={() => setConfirmRevoke(null)}
-                                                                    className="h-7 text-xs px-2"
-                                                                >
-                                                                    Cancel
-                                                                </Button>
-                                                            </>
-                                                        )}
-                                                        {!needsConfirm && (
-                                                            <Button
-                                                                variant="ghost" size="icon"
-                                                                isLoading={isRevoking}
-                                                                onClick={() => handleRevoke(k.key_hash)}
-                                                                className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            >
-                                                                {!isRevoking && <Trash2 className="h-3.5 w-3.5" />}
-                                                            </Button>
-                                                        )}
-                                                    </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );

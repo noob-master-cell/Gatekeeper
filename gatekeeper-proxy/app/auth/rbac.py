@@ -28,9 +28,10 @@ ANY_AUTHENTICATED = "__any_authenticated__"
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 ROUTE_POLICIES: list[tuple[str, list[str] | str]] = [
-    # Admin routes — admin only
+    # Admin API — admin-only (internal service endpoints)
     (r"^/api/admin(/.*)?$", ["admin"]),
-    (r"^/admin(/.*)?$", ["admin"]),
+    # Admin dashboard routes — any authenticated user can READ; writes restricted below
+    (r"^/admin(/.*)?$", ANY_AUTHENTICATED),
     # HR routes — hr and admin
     (r"^/api/hr(/.*)?$", ["hr", "admin"]),
     # Default — any authenticated user
@@ -38,8 +39,10 @@ ROUTE_POLICIES: list[tuple[str, list[str] | str]] = [
 ]
 
 # Write-restriction map: pattern → roles allowed to write (others are read-only)
+# Admin paths: only admin can mutate; user/hr role is read-only
 # HR paths: only admin can mutate; hr role is read-only
 _WRITE_RESTRICTIONS: list[tuple[re.Pattern, list[str]]] = [
+    (re.compile(r"^/admin(/.*)?$"), ["admin"]),
     (re.compile(r"^/api/hr(/.*)?$"), ["admin"]),
 ]
 

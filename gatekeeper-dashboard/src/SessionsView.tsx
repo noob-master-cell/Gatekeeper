@@ -7,11 +7,12 @@ import { Badge } from './components/ui/Badge';
 import { Card } from './components/ui/Card';
 import { formatDistanceToNow } from 'date-fns';
 import { Shield, Key, Clock, Trash2, RefreshCw, AlertCircle, CheckCircle, XCircle, ShieldOff } from 'lucide-react';
+import { maskEmail } from './lib/utils';
 
 interface Toast { id: number; message: string; ok: boolean; }
 let toastId = 0;
 
-export default function SessionsView() {
+export default function SessionsView({ isAdmin = false }: { isAdmin?: boolean }) {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -135,7 +136,7 @@ export default function SessionsView() {
                 <div className="space-y-4">
                     {Object.entries(grouped).map(([userId, userSessions]) => {
                         const { email, roles } = userSessions[0];
-                        const isAdmin = roles.includes('admin');
+                        const isRowAdmin = roles.includes('admin');
                         const isRevokingAll = actionLoading === `revoke:${userId}`;
 
                         return (
@@ -144,10 +145,10 @@ export default function SessionsView() {
                                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/60">
                                     <div className="flex items-center gap-3">
                                         <div className="relative">
-                                            <div className={`h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold ${isAdmin ? 'bg-red-500' : 'bg-brand-500'}`}>
+                                            <div className={`h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold ${isRowAdmin ? 'bg-red-500' : 'bg-brand-500'}`}>
                                                 {email[0].toUpperCase()}
                                             </div>
-                                            {isAdmin && (
+                                            {isRowAdmin && (
                                                 <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white border border-slate-200 flex items-center justify-center">
                                                     <Shield className="h-2.5 w-2.5 text-red-500" />
                                                 </div>
@@ -155,24 +156,30 @@ export default function SessionsView() {
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm font-semibold text-slate-900">{email}</span>
+                                                <span className="text-sm font-semibold text-slate-900">
+                                                    {isAdmin ? email : maskEmail(email)}
+                                                </span>
                                                 <div className="flex gap-1">
                                                     {roles.map(r => (
                                                         <Badge key={r} variant={r === 'admin' ? 'error' : r === 'hr' ? 'warning' : 'outline'} className="text-[10px]">{r}</Badge>
                                                     ))}
                                                 </div>
                                             </div>
-                                            <p className="text-[11px] text-slate-400 font-mono mt-0.5">{userId}</p>
+                                            <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                                {isAdmin ? userId : userId.slice(0, 8) + '••••'}
+                                            </p>
                                         </div>
                                     </div>
-                                    <Button
-                                        variant={confirmRevokeAll?.userId === userId ? 'destructive' : 'outline'}
-                                        size="sm"
-                                        isLoading={isRevokingAll}
-                                        onClick={() => handleRevokeAll(userId, email)}
-                                    >
-                                        {confirmRevokeAll?.userId === userId ? 'Confirm?' : 'Revoke All'}
-                                    </Button>
+                                    {isAdmin && (
+                                        <Button
+                                            variant={confirmRevokeAll?.userId === userId ? 'destructive' : 'outline'}
+                                            size="sm"
+                                            isLoading={isRevokingAll}
+                                            onClick={() => handleRevokeAll(userId, email)}
+                                        >
+                                            {confirmRevokeAll?.userId === userId ? 'Confirm?' : 'Revoke All'}
+                                        </Button>
+                                    )}
                                 </div>
 
                                 {/* Sessions */}
@@ -200,25 +207,27 @@ export default function SessionsView() {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-2">
-                                                    {needsConfirm && (
-                                                        <span className="text-xs text-red-500">Click again to confirm</span>
-                                                    )}
-                                                    <Button
-                                                        variant={needsConfirm ? 'destructive' : 'ghost'}
-                                                        size="icon"
-                                                        isLoading={isKilling}
-                                                        onClick={() => handleKill(s.jti)}
-                                                        className={needsConfirm ? '' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}
-                                                    >
-                                                        {!isKilling && <Trash2 className="h-4 w-4" />}
-                                                    </Button>
-                                                    {needsConfirm && (
-                                                        <Button variant="ghost" size="sm" onClick={() => setConfirmKill(null)} className="text-slate-500">
-                                                            Cancel
+                                                {isAdmin && (
+                                                    <div className="flex items-center gap-2">
+                                                        {needsConfirm && (
+                                                            <span className="text-xs text-red-500">Click again to confirm</span>
+                                                        )}
+                                                        <Button
+                                                            variant={needsConfirm ? 'destructive' : 'ghost'}
+                                                            size="icon"
+                                                            isLoading={isKilling}
+                                                            onClick={() => handleKill(s.jti)}
+                                                            className={needsConfirm ? '' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}
+                                                        >
+                                                            {!isKilling && <Trash2 className="h-4 w-4" />}
                                                         </Button>
-                                                    )}
-                                                </div>
+                                                        {needsConfirm && (
+                                                            <Button variant="ghost" size="sm" onClick={() => setConfirmKill(null)} className="text-slate-500">
+                                                                Cancel
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}

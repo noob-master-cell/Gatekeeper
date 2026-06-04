@@ -7,6 +7,7 @@ import { Badge } from './components/ui/Badge';
 import { Card } from './components/ui/Card';
 import { formatDistanceToNow } from 'date-fns';
 import { Shield, Key, AlertCircle, RefreshCw, UserX } from 'lucide-react';
+import { maskEmail } from './lib/utils';
 
 interface UserInfo {
     user_id: string;
@@ -16,7 +17,7 @@ interface UserInfo {
     last_seen: string;
 }
 
-export default function UsersView() {
+export default function UsersView({ isAdmin = false }: { isAdmin?: boolean }) {
     const [users, setUsers] = useState<UserInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -83,8 +84,8 @@ export default function UsersView() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {users.map(user => {
-                        const isAdmin = user.roles.includes('admin');
-                        const accentColor = isAdmin ? 'bg-red-500' : user.roles.includes('hr') ? 'bg-amber-500' : 'bg-brand-500';
+                        const isRowAdmin = user.roles.includes('admin');
+                        const accentColor = isRowAdmin ? 'bg-red-500' : user.roles.includes('hr') ? 'bg-amber-500' : 'bg-brand-500';
 
                         return (
                             <Card key={user.user_id} className="group overflow-hidden hover:shadow-md transition-shadow relative">
@@ -98,15 +99,19 @@ export default function UsersView() {
                                                 <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold ${accentColor}`}>
                                                     {user.email[0].toUpperCase()}
                                                 </div>
-                                                {isAdmin && (
+                                                {isRowAdmin && (
                                                     <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white border border-slate-200 flex items-center justify-center">
                                                         <Shield className="h-2.5 w-2.5 text-red-500" />
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="text-sm font-semibold text-slate-900 truncate max-w-[160px]" title={user.email}>{user.email}</p>
-                                                <p className="text-[10px] text-slate-400 font-mono truncate" title={user.user_id}>{user.user_id}</p>
+                                                <p className="text-sm font-semibold text-slate-900 truncate max-w-[160px]" title={isAdmin ? user.email : undefined}>
+                                                    {isAdmin ? user.email : maskEmail(user.email)}
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 font-mono truncate">
+                                                    {isAdmin ? user.user_id : user.user_id.slice(0, 8) + '••••'}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
@@ -132,14 +137,16 @@ export default function UsersView() {
                                         </div>
                                     </div>
 
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="w-full mt-4 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
-                                        onClick={() => handleRevokeAll(user.user_id, user.email)}
-                                    >
-                                        <UserX className="mr-1.5 h-3.5 w-3.5" /> Revoke Access
-                                    </Button>
+                                    {isAdmin && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="w-full mt-4 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                                            onClick={() => handleRevokeAll(user.user_id, user.email)}
+                                        >
+                                            <UserX className="mr-1.5 h-3.5 w-3.5" /> Revoke Access
+                                        </Button>
+                                    )}
                                 </div>
                             </Card>
                         );

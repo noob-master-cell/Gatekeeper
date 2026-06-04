@@ -32,6 +32,7 @@ PUBLIC_ROUTES = frozenset(
         "/login",
         "/auth/callback/google",
         "/auth/dev-login",
+        "/auth/demo",
         "/auth/logout",
         "/proxy/health",
         "/health",

@@ -29,7 +29,7 @@ services:
       - GK_MTLS_ENABLED=false
       - GK_GOOGLE_CLIENT_ID=${GK_GOOGLE_CLIENT_ID:-}
       - GK_GOOGLE_CLIENT_SECRET=${GK_GOOGLE_CLIENT_SECRET:-}
-      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI:-http://localhost:8000/oauth/callback}
+      - GK_GOOGLE_REDIRECT_URI=${GK_GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/callback/google}
       - GK_CP_API_KEY=${GK_CP_API_KEY:-dev-api-key-change-me}
       # OPA
       - GK_OPA_ENABLED=true
