@@ -24,6 +24,7 @@ services:
       - GK_LOG_FORMAT=json
       - GK_DEV_MODE=true
       - GK_DEV_LOGIN_ENABLED=true
+      - GK_DEMO_ENABLED=true
       - GK_REDIS_URL=redis://redis:6379/0
       - GK_KEYS_DIR=/tmp/gatekeeper_keys
       - GK_MTLS_ENABLED=false

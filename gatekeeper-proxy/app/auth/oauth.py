@@ -376,7 +376,7 @@ async def demo_login(request: Request) -> Response:
 
     Lets portfolio reviewers access the dashboard without a Google account.
     """
-    if not settings.dev_mode:
+    if not settings.demo_enabled and not settings.dev_mode:
         return JSONResponse(
             status_code=404,
             content={"error": "Demo login is not available in production"},
