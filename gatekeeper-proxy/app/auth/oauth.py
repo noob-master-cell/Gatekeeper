@@ -372,16 +372,11 @@ async def dev_login_submit(request: Request) -> Response:
 
 @router.get("/auth/demo")
 async def demo_login(request: Request) -> Response:
-    """Issue a read-only demo session in one click (dev mode only).
+    """Issue a read-only demo session in one click.
 
-    Lets portfolio reviewers access the dashboard without a Google account.
+    Always enabled — creates a user-role (read-only) session with masked PII.
+    Safe to expose publicly; no admin access is granted.
     """
-    if not settings.demo_enabled and not settings.dev_mode:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "Demo login is not available in production"},
-        )
-
     email = "demo@gatekeeper.local"
     user_id = "demo-user"
     roles = ["user"]  # read-only — no admin mutations
