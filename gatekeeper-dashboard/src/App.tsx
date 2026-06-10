@@ -1,9 +1,9 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, Component, type ReactNode } from 'react';
 import { Sidebar } from './components/ui/Sidebar';
 import type { ViewType } from './components/ui/Sidebar';
 import { Topbar } from './components/ui/Topbar';
 import { LoginScreen } from './components/ui/LoginScreen';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, AlertTriangle } from 'lucide-react';
 
 const OverviewView = lazy(() => import('./OverviewView'));
 const SessionsView = lazy(() => import('./SessionsView'));
@@ -20,6 +20,50 @@ function ViewFallback() {
             <div className="h-8 w-8 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin" />
         </div>
     );
+}
+
+interface ViewErrorBoundaryState { err: Error | null }
+
+class ViewErrorBoundary extends Component<{ children: ReactNode }, ViewErrorBoundaryState> {
+    state: ViewErrorBoundaryState = { err: null };
+
+    static getDerivedStateFromError(err: Error): ViewErrorBoundaryState {
+        return { err };
+    }
+
+    componentDidCatch(err: Error, info: { componentStack?: string | null }): void {
+        // Surface the error so the page is never silently blank in production.
+        console.error('[gatekeeper] view error', err, info.componentStack);
+    }
+
+    handleReload = () => {
+        this.setState({ err: null });
+        window.location.reload();
+    };
+
+    render() {
+        if (!this.state.err) return this.props.children;
+        return (
+            <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
+                    <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                    <h2 className="text-base font-semibold text-slate-900">This view failed to load</h2>
+                    <p className="max-w-md text-sm text-slate-500">
+                        {this.state.err.message || 'An unexpected error occurred. A reload often resolves chunk-load failures after a redeploy.'}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={this.handleReload}
+                    className="rounded-md bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
+                >
+                    Reload page
+                </button>
+            </div>
+        );
+    }
 }
 
 export interface UserInfo {
@@ -72,21 +116,23 @@ export default function App() {
                 <Topbar user={user} />
 
                 <main className="flex-1 overflow-y-auto">
-                    <Suspense fallback={<ViewFallback />}>
-                        {(() => {
-                            const isAdmin = user.roles.includes('admin');
-                            return <>
-                                {view === 'overview'   && <OverviewView />}
-                                {view === 'traffic'    && <TrafficView />}
-                                {view === 'sessions'   && <SessionsView isAdmin={isAdmin} />}
-                                {view === 'users'      && <UsersView isAdmin={isAdmin} />}
-                                {view === 'policies'   && <PoliciesView />}
-                                {view === 'posture'    && <PostureView />}
-                                {view === 'ratelimits' && <RateLimitsView />}
-                                {view === 'apikeys'    && <ApiKeysView isAdmin={isAdmin} />}
-                            </>;
-                        })()}
-                    </Suspense>
+                    <ViewErrorBoundary key={view}>
+                        <Suspense fallback={<ViewFallback />}>
+                            {(() => {
+                                const isAdmin = user.roles.includes('admin');
+                                return <>
+                                    {view === 'overview'   && <OverviewView />}
+                                    {view === 'traffic'    && <TrafficView />}
+                                    {view === 'sessions'   && <SessionsView isAdmin={isAdmin} />}
+                                    {view === 'users'      && <UsersView isAdmin={isAdmin} />}
+                                    {view === 'policies'   && <PoliciesView />}
+                                    {view === 'posture'    && <PostureView />}
+                                    {view === 'ratelimits' && <RateLimitsView />}
+                                    {view === 'apikeys'    && <ApiKeysView isAdmin={isAdmin} />}
+                                </>;
+                            })()}
+                        </Suspense>
+                    </ViewErrorBoundary>
                 </main>
             </div>
         </div>

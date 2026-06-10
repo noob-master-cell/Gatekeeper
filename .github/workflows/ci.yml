@@ -49,6 +49,24 @@ jobs:
     strategy:
       matrix:
         service: [gatekeeper-proxy, gatekeeper-backend, gatekeeper-control-plane]
+    services:
+      # Only the control-plane tests touch Postgres; service is cheap to spin up
+      # unconditionally rather than splitting the matrix.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gatekeeper
+          POSTGRES_PASSWORD: gatekeeper_dev
+          POSTGRES_DB: gatekeeper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gatekeeper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      GK_CP_DATABASE_URL: postgresql+asyncpg://gatekeeper:gatekeeper_dev@localhost:5432/gatekeeper
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +78,12 @@ jobs:
         run: |
           cd ${{ matrix.service }}
           pip install -e ".[dev]"
+
+      - name: Apply control-plane migrations
+        if: matrix.service == 'gatekeeper-control-plane'
+        run: |
+          cd ${{ matrix.service }}
+          alembic upgrade head
 
       - name: Run tests
         run: |
