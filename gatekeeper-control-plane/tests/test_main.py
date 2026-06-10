@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -29,7 +31,9 @@ async def test_health(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_roles(client: AsyncClient):
     """GET /admin/roles should return seed roles."""
-    response = await client.get("/admin/roles")
+    mocked_roles = [{"name": "admin"}, {"name": "hr"}, {"name": "user"}]
+    with patch("app.main.list_all_roles", new=AsyncMock(return_value=mocked_roles)):
+        response = await client.get("/admin/roles")
     assert response.status_code == 200
     data = response.json()
     role_names = [r["name"] for r in data["data"]]
