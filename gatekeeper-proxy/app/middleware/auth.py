@@ -177,7 +177,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "roles": ["admin"],
                 "jti": "apikey:cp-master",
             })
-            
+
             # Check RBAC
             path = request.url.path
             allowed, reason = check_route_access(path, claims.roles)

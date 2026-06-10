@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './com
 import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 import { Skeleton } from './components/ui/Skeleton';
+import { errorMessage } from './lib/utils';
 
 const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400';
 const selectCls = inputCls;
@@ -46,8 +47,8 @@ export default function PoliciesView() {
         try {
             const result = await pushOpaPolicy(opaPolicy);
             setOpaStatus({ ok: result.pushed, message: result.reason || (result.pushed ? 'Deployed successfully' : 'Deploy failed') });
-        } catch (err: any) {
-            setOpaStatus({ ok: false, message: err.message || 'Deploy failed' });
+        } catch (err) {
+            setOpaStatus({ ok: false, message: errorMessage(err, 'Deploy failed') });
         } finally {
             setOpaSaving(false);
         }
@@ -58,13 +59,13 @@ export default function PoliciesView() {
         try {
             setSimulating(true); setSimResult(null);
             setSimResult(await simulatePolicy({ email: simEmail, roles: simRoles.split(',').map(r => r.trim()).filter(Boolean), path: simPath, method: simMethod }));
-        } catch (err: any) { alert(err.message || 'Simulation failed'); }
+        } catch (err) { alert(errorMessage(err, 'Simulation failed')); }
         finally { setSimulating(false); }
     };
 
     const loadPolicies = async () => {
         try { setLoading(true); setError(null); setPolicies(await fetchPolicies()); }
-        catch (err: any) { setError(err.message || 'Failed to fetch policies'); }
+        catch (err) { setError(errorMessage(err, 'Failed to fetch policies')); }
         finally { setLoading(false); }
     };
 
@@ -73,7 +74,7 @@ export default function PoliciesView() {
     const handleDelete = async (name: string) => {
         if (!window.confirm(`Delete policy '${name}'?`)) return;
         try { await deletePolicy(name); await loadPolicies(); }
-        catch (err: any) { alert(err.message || 'Delete failed'); }
+        catch (err) { alert(errorMessage(err, 'Delete failed')); }
     };
 
     const handleCreate = async (e: React.FormEvent) => {
@@ -82,7 +83,7 @@ export default function PoliciesView() {
             await createPolicy({ name: newPolicyName, pattern: newPolicyPattern, priority: parseInt(newPolicyPriority, 10), allow_any_authenticated: newPolicyAnyAuth, roles: newPolicyAnyAuth ? [] : newPolicyRoles.split(',').map(r => r.trim()).filter(Boolean), is_active: true });
             setIsAdding(false); setNewPolicyName(''); setNewPolicyPattern(''); setNewPolicyAnyAuth(false);
             await loadPolicies();
-        } catch (err: any) { alert(err.message || 'Create failed'); }
+        } catch (err) { alert(errorMessage(err, 'Create failed')); }
     };
 
     if (loading && policies.length === 0) {

@@ -55,7 +55,10 @@ async def login(request: Request) -> Response:
 
     return JSONResponse(
         status_code=501,
-        content={"error": "Authentication not configured", "detail": "Set GK_GOOGLE_CLIENT_ID and GK_GOOGLE_CLIENT_SECRET."},
+        content={
+            "error": "Authentication not configured",
+            "detail": "Set GK_GOOGLE_CLIENT_ID and GK_GOOGLE_CLIENT_SECRET.",
+        },
     )
 
 
@@ -183,7 +186,10 @@ async def oauth_callback(request: Request, code: str) -> Response:
 
         # Set cookie and redirect to dashboard
         response = RedirectResponse(url="/", status_code=302)
-        is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        is_secure = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
+        )
         response.set_cookie(
             key="gatekeeper_token",
             value=access_token,
@@ -374,9 +380,15 @@ async def dev_login_submit(request: Request) -> Response:
 async def demo_login(request: Request) -> Response:
     """Issue a read-only demo session in one click.
 
-    Always enabled — creates a user-role (read-only) session with masked PII.
-    Safe to expose publicly; no admin access is granted.
+    Gated by GK_DEMO_ENABLED (default: on). Creates a `user`-role session with
+    masked PII — safe to expose publicly; no admin mutations are permitted.
     """
+    if not settings.demo_enabled:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Demo login is disabled"},
+        )
+
     email = "demo@gatekeeper.local"
     user_id = "demo-user"
     roles = ["user"]  # read-only — no admin mutations
@@ -398,11 +410,15 @@ async def demo_login(request: Request) -> Response:
         logger.warning("auth.demo_session_failed", error=str(exc))
 
     response = RedirectResponse(url="/", status_code=302)
+    is_secure = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto") == "https"
+    )
     response.set_cookie(
         key="gatekeeper_token",
         value=access_token,
         httponly=True,
-        secure=False,
+        secure=is_secure,
         samesite="lax",
         max_age=settings.jwt_expiry_minutes * 60,
         path="/",

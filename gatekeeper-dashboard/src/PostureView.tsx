@@ -6,6 +6,7 @@ import { Card, CardContent } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 import { Skeleton } from './components/ui/Skeleton';
+import { errorMessage } from './lib/utils';
 
 const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400';
 
@@ -26,19 +27,19 @@ export default function PostureView() {
             setLoading(true); setError(null);
             const data = await fetchPostureRules();
             if (mountedRef.current) setRules(data);
-        } catch (err: any) {
-            if (mountedRef.current) setError(err.message || 'Failed to fetch rules');
+        } catch (err) {
+            if (mountedRef.current) setError(errorMessage(err, 'Failed to fetch rules'));
         } finally {
             if (mountedRef.current) setLoading(false);
         }
     };
 
-    useEffect(() => { loadRules(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { loadRules(); }, []);
 
     const handleDelete = async (id: number) => {
         if (!window.confirm('Delete this posture rule?')) return;
         try { await deletePostureRule(id); await loadRules(); }
-        catch (err: any) { alert(err.message || 'Delete failed'); }
+        catch (err) { alert(errorMessage(err, 'Delete failed')); }
     };
 
     const handleCreate = async (e: React.FormEvent) => {
@@ -48,7 +49,7 @@ export default function PostureView() {
             await createPostureRule({ rule_type: newRuleType, value: newValue.trim(), action: 'block', is_active: true, description: newDescription.trim() || null });
             setIsAdding(false); setNewValue(''); setNewDescription('');
             await loadRules();
-        } catch (err: any) { alert(err.message || 'Create failed'); }
+        } catch (err) { alert(errorMessage(err, 'Create failed')); }
     };
 
     const typeIcon = (type: string) => {

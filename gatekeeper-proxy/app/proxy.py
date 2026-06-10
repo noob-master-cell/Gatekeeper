@@ -7,10 +7,10 @@ from collections.abc import AsyncIterator
 import httpx
 import structlog
 from fastapi import Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.responses import Response
 
-from app.circuit_breaker import CircuitBreakerOpen, backend_cb, control_plane_cb
+from app.circuit_breaker import CircuitBreakerOpenError, backend_cb, control_plane_cb
 from app.config import settings
 from app.mtls import create_mtls_ssl_context
 
@@ -27,7 +27,7 @@ async def get_client() -> httpx.AsyncClient:
     if _client is None or _client.is_closed:
         # Load mTLS context if enabled
         ssl_context = create_mtls_ssl_context() if settings.mtls_enabled else True
-        
+
         _client = httpx.AsyncClient(
             verify=ssl_context,
             limits=httpx.Limits(
@@ -102,15 +102,15 @@ async def forward_request(request: Request) -> Response:
     # Build target URL
     path = request.url.path
     query = str(request.url.query)
-    
+
     # Route all /admin/* requests to control plane
     base_url = settings.backend_url
     if path.startswith("/admin/"):
         base_url = settings.control_plane_url
-        
+
     if settings.mtls_enabled:
         base_url = base_url.replace("http://", "https://")
-        
+
     target_url = f"{base_url}{path}"
     if query:
         target_url = f"{target_url}?{query}"
@@ -148,12 +148,11 @@ async def forward_request(request: Request) -> Response:
         )
         log.info("proxy.response", status_code=backend_response.status_code)
 
-    except CircuitBreakerOpen as exc:
+    except CircuitBreakerOpenError as exc:
         log.warning("proxy.circuit_open", name=cb.name)
-        return Response(
-            content=f'{{"error": "Service temporarily unavailable", "detail": "{exc}", "code": 503}}',
+        return JSONResponse(
+            content={"error": "Service temporarily unavailable", "detail": str(exc), "code": 503},
             status_code=503,
-            media_type="application/json",
         )
     except httpx.ConnectTimeout:
         log.error("proxy.error.connect_timeout")
@@ -214,9 +213,9 @@ async def forward_request_streaming(request: Request) -> StreamingResponse:
 
     path = request.url.path
     query = str(request.url.query)
-    
+
     base_url = settings.backend_url
-    if path.startswith("/admin/policies") or path.startswith("/admin/posture") or path.startswith("/admin/metrics"):
+    if path.startswith(("/admin/policies", "/admin/posture", "/admin/metrics")):
         base_url = settings.control_plane_url
 
     if settings.mtls_enabled:

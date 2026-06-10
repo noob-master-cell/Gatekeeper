@@ -23,7 +23,8 @@ export default function SessionsView({ isAdmin = false }: { isAdmin?: boolean })
     const toastTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
     useEffect(() => {
-        return () => { toastTimers.current.forEach(clearTimeout); };
+        const timers = toastTimers.current;
+        return () => { timers.forEach(clearTimeout); };
     }, []);
 
     const addToast = (message: string, ok: boolean) => {

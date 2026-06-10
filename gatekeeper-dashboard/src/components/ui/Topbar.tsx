@@ -1,5 +1,5 @@
 import { cn } from '../../lib/utils';
-import { LogOut, ChevronDown } from 'lucide-react';
+import { LogOut, ChevronDown, FlaskConical } from 'lucide-react';
 import type { UserInfo } from '../../App';
 
 interface TopbarProps {
@@ -11,6 +11,7 @@ export function Topbar({ user, className }: TopbarProps) {
     const handleLogout = () => { window.location.href = '/auth/logout'; };
     const initials = user.email.charAt(0).toUpperCase();
     const primaryRole = user.roles?.[0] ?? 'user';
+    const isDemo = user.email === 'demo@gatekeeper.local';
 
     const roleColor: Record<string, string> = {
         admin: 'bg-red-50 text-red-600 border-red-200',
@@ -26,7 +27,14 @@ export function Topbar({ user, className }: TopbarProps) {
                 className
             )}
         >
-            <div className="flex-1" />
+            <div className="flex-1">
+                {isDemo && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                        <FlaskConical className="h-3 w-3" />
+                        Demo mode — read-only, PII masked
+                    </span>
+                )}
+            </div>
 
             <div className="flex items-center gap-3">
                 {/* Role pill */}

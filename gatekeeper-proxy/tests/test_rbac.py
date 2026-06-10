@@ -94,10 +94,16 @@ class TestRBACEngine:
         allowed, _ = check_route_access("/admin", ["admin"])
         assert allowed is True
 
-    def test_admin_root_rejected_for_user(self):
-        """The /admin root path should reject regular users."""
-        allowed, _ = check_route_access("/admin/sessions", ["user"])
+    def test_admin_root_readable_for_user(self):
+        """Demo/user role can READ /admin dashboard pages (PII is masked client-side)."""
+        allowed, _ = check_route_access("/admin/sessions", ["user"], method="GET")
+        assert allowed is True
+
+    def test_admin_root_write_rejected_for_user(self):
+        """Demo/user role cannot mutate /admin resources."""
+        allowed, reason = check_route_access("/admin/sessions/revoke", ["user"], method="POST")
         assert allowed is False
+        assert reason == "write_access_denied"
 
 
 # ─── Redis Session Tests (with mocks) ────────────────────────

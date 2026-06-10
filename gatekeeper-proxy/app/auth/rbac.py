@@ -112,10 +112,8 @@ def check_route_access(path: str, user_roles: list[str], method: str = "GET") ->
     # Check write restrictions before role policies
     if method.upper() in WRITE_METHODS:
         for pattern, write_roles in _WRITE_RESTRICTIONS:
-            if pattern.match(path):
-                if not (set(user_roles) & set(write_roles)):
-                    result = (False, "write_access_denied")
-                    return result
+            if pattern.match(path) and not (set(user_roles) & set(write_roles)):
+                return (False, "write_access_denied")
 
     # Evaluate against compiled role policies
     for pattern, required_roles in _compiled_policies:

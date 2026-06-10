@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import time
-from datetime import UTC, datetime
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -47,7 +46,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Emit audit event for authenticated requests, ignoring dashboard polling
         current_user = getattr(request.state, "current_user", None)
         is_dashboard_poll = request.headers.get("x-dashboard-poll") == "true"
-        
+
         if current_user and not is_dashboard_poll:
             with contextlib.suppress(Exception):
                 await emit_audit_event(

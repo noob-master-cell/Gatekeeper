@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     # Dev login bypass (only works when dev_mode=True)
     dev_login_enabled: bool = True
 
-    # Portfolio demo login — safe to enable in production (creates read-only user session)
-    demo_enabled: bool = False
+    # Portfolio demo login — safe to leave enabled (creates read-only user session)
+    demo_enabled: bool = True
 
     # Redis (sessions)
     redis_url: str = "redis://localhost:6379/0"

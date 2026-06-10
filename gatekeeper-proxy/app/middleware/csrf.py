@@ -14,6 +14,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.config import settings
+
 logger = structlog.get_logger()
 
 # HTTP methods that can cause state changes
@@ -21,8 +23,6 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "DELETE", "PATCH"})
 
 # Paths exempt from CSRF checks (e.g. OAuth callbacks, which come from Google)
 CSRF_EXEMPT_PATHS = frozenset({"/oauth/callback"})
-
-from app.config import settings
 
 # Allowed origins (extend via config in production)
 ALLOWED_ORIGINS = set(settings.parsed_cors_origins)

@@ -59,8 +59,7 @@ in_business_hours if {
     day  := time.weekday(time.now_ns())
     hour >= 8
     hour < 20
-    day >= 1
-    day <= 5
+    day in {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
 }
 
 # ─── Computed deny conditions (used in allow rules and reasons) ───

@@ -1,17 +1,26 @@
-import { useState, useEffect } from 'react';
-import OverviewView from './OverviewView';
-import SessionsView from './SessionsView';
-import TrafficView from './TrafficView';
-import UsersView from './UsersView';
-import PoliciesView from './PoliciesView';
-import PostureView from './PostureView';
-import RateLimitsView from './RateLimitsView';
-import ApiKeysView from './ApiKeysView';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Sidebar } from './components/ui/Sidebar';
 import type { ViewType } from './components/ui/Sidebar';
 import { Topbar } from './components/ui/Topbar';
 import { LoginScreen } from './components/ui/LoginScreen';
 import { ShieldCheck } from 'lucide-react';
+
+const OverviewView = lazy(() => import('./OverviewView'));
+const SessionsView = lazy(() => import('./SessionsView'));
+const TrafficView = lazy(() => import('./TrafficView'));
+const UsersView = lazy(() => import('./UsersView'));
+const PoliciesView = lazy(() => import('./PoliciesView'));
+const PostureView = lazy(() => import('./PostureView'));
+const RateLimitsView = lazy(() => import('./RateLimitsView'));
+const ApiKeysView = lazy(() => import('./ApiKeysView'));
+
+function ViewFallback() {
+    return (
+        <div className="flex h-full items-center justify-center">
+            <div className="h-8 w-8 rounded-full border-2 border-brand-500/30 border-t-brand-500 animate-spin" />
+        </div>
+    );
+}
 
 export interface UserInfo {
     sub: string;
@@ -63,19 +72,21 @@ export default function App() {
                 <Topbar user={user} />
 
                 <main className="flex-1 overflow-y-auto">
-                    {(() => {
-                        const isAdmin = user.roles.includes('admin');
-                        return <>
-                            {view === 'overview'   && <OverviewView />}
-                            {view === 'traffic'    && <TrafficView />}
-                            {view === 'sessions'   && <SessionsView isAdmin={isAdmin} />}
-                            {view === 'users'      && <UsersView isAdmin={isAdmin} />}
-                            {view === 'policies'   && <PoliciesView />}
-                            {view === 'posture'    && <PostureView />}
-                            {view === 'ratelimits' && <RateLimitsView />}
-                            {view === 'apikeys'    && <ApiKeysView isAdmin={isAdmin} />}
-                        </>;
-                    })()}
+                    <Suspense fallback={<ViewFallback />}>
+                        {(() => {
+                            const isAdmin = user.roles.includes('admin');
+                            return <>
+                                {view === 'overview'   && <OverviewView />}
+                                {view === 'traffic'    && <TrafficView />}
+                                {view === 'sessions'   && <SessionsView isAdmin={isAdmin} />}
+                                {view === 'users'      && <UsersView isAdmin={isAdmin} />}
+                                {view === 'policies'   && <PoliciesView />}
+                                {view === 'posture'    && <PostureView />}
+                                {view === 'ratelimits' && <RateLimitsView />}
+                                {view === 'apikeys'    && <ApiKeysView isAdmin={isAdmin} />}
+                            </>;
+                        })()}
+                    </Suspense>
                 </main>
             </div>
         </div>

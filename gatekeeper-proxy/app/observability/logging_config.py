@@ -20,7 +20,7 @@ import structlog
 def _add_trace_context(logger, method_name, event_dict):
     """Inject OpenTelemetry trace context into every log line."""
     try:
-        from app.observability.tracing import get_current_trace_id, get_current_span_id
+        from app.observability.tracing import get_current_span_id, get_current_trace_id
 
         trace_id = get_current_trace_id()
         span_id = get_current_span_id()

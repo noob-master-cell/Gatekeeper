@@ -185,8 +185,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Try to get per-key rate limit from Redis
         try:
-            from app.auth.api_keys import _hash_key
             import json
+
+            from app.auth.api_keys import _hash_key
 
             r = get_redis()
             full_hash = _hash_key(raw_key)

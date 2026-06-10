@@ -10,6 +10,7 @@ Sets up distributed tracing for the Gatekeeper proxy:
 from __future__ import annotations
 
 import os
+
 import structlog
 
 logger = structlog.get_logger()
@@ -37,13 +38,13 @@ def init_tracing(service_name: str = "gatekeeper-proxy") -> None:
 
     try:
         from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+        from opentelemetry.baggage.propagation import W3CBaggagePropagator
         from opentelemetry.propagate import set_global_textmap
         from opentelemetry.propagators.composite import CompositeTextMapPropagator
+        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.trace.propagation import TraceContextTextMapPropagator
-        from opentelemetry.baggage.propagation import W3CBaggagePropagator
 
         # Resource identifies this service in traces
         resource = Resource.create({
@@ -63,7 +64,10 @@ def init_tracing(service_name: str = "gatekeeper-proxy") -> None:
             provider.add_span_processor(BatchSpanProcessor(exporter))
             logger.info("tracing.otlp_configured", endpoint=otlp_endpoint)
         else:
-            logger.info("tracing.no_exporter", message="No OTLP endpoint configured, traces are in-process only")
+            logger.info(
+                "tracing.no_exporter",
+                message="No OTLP endpoint configured, traces are in-process only",
+            )
 
         trace.set_tracer_provider(provider)
 
@@ -80,7 +84,10 @@ def init_tracing(service_name: str = "gatekeeper-proxy") -> None:
         logger.info("tracing.initialized", service=service_name)
 
     except ImportError:
-        logger.warning("tracing.otel_not_installed", message="OpenTelemetry packages not installed, tracing disabled")
+        logger.warning(
+            "tracing.otel_not_installed",
+            message="OpenTelemetry packages not installed, tracing disabled",
+        )
         _initialized = True  # Don't retry
 
     except Exception as exc:
@@ -104,7 +111,10 @@ def instrument_fastapi(app) -> None:
         )
         logger.info("tracing.fastapi_instrumented")
     except ImportError:
-        logger.debug("tracing.fastapi_instrument_skip", message="FastAPI instrumentor not available")
+        logger.debug(
+            "tracing.fastapi_instrument_skip",
+            message="FastAPI instrumentor not available",
+        )
     except Exception as exc:
         logger.warning("tracing.fastapi_instrument_failed", error=str(exc))
 

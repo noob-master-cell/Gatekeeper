@@ -14,8 +14,11 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse
 
 from app.auth.keys import get_jwks, initialize_keys
 from app.auth.oauth import router as auth_router
@@ -129,14 +132,18 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(PrometheusMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
-from starlette.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.parsed_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Correlation-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+    expose_headers=[
+        "X-Correlation-ID",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+    ],
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -306,10 +313,14 @@ async def list_audit_logs(request: Request) -> JSONResponse:
                 data = json.loads(fields["data"])
 
                 # Apply optional filters
-                if email_filter and email_filter not in str(data.get("email", "")).lower(): continue
-                if path_filter and path_filter not in str(data.get("path", "")).lower(): continue
-                if method_filter and data.get("method") != method_filter: continue
-                if status_filter and str(data.get("status_code")) != status_filter: continue
+                if email_filter and email_filter not in str(data.get("email", "")).lower():
+                    continue
+                if path_filter and path_filter not in str(data.get("path", "")).lower():
+                    continue
+                if method_filter and data.get("method") != method_filter:
+                    continue
+                if status_filter and str(data.get("status_code")) != status_filter:
+                    continue
 
                 data["id"] = entry_id
                 logs.append(data)
@@ -476,6 +487,7 @@ async def event_stream(request: Request):
     """Server-Sent Events stream — pushes metrics snapshot every 3 seconds."""
     import json as _json
     from datetime import UTC, datetime
+
     from starlette.responses import StreamingResponse
 
     async def generate():
@@ -526,7 +538,9 @@ async def get_opa_policy(request: Request) -> JSONResponse:
         from app.auth.opa import get_policy
         policy = await get_policy()
         if policy is None:
-            return JSONResponse(status_code=503, content={"error": "Could not fetch policy from OPA"})
+            return JSONResponse(
+                status_code=503, content={"error": "Could not fetch policy from OPA"}
+            )
         return JSONResponse(content={"policy": policy})
     except Exception as exc:
         return JSONResponse(status_code=503, content={"error": str(exc)})
@@ -560,10 +574,6 @@ async def proxy_route_api(request: Request, path: str):
     """Forward /api/* and /admin/* requests to the backend targets."""
     return await forward_request(request)
 
-
-from fastapi.staticfiles import StaticFiles
-from fastapi import HTTPException
-from starlette.responses import FileResponse
 
 public_dir = "/tmp/gatekeeper/public"
 if os.path.exists(public_dir):

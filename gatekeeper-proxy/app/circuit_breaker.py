@@ -16,20 +16,20 @@ from __future__ import annotations
 
 import asyncio
 import time
-from enum import Enum
+from enum import StrEnum
 
 import structlog
 
 logger = structlog.get_logger()
 
 
-class CircuitState(str, Enum):
-    CLOSED    = "closed"
-    OPEN      = "open"
+class CircuitState(StrEnum):
+    CLOSED = "closed"
+    OPEN = "open"
     HALF_OPEN = "half_open"
 
 
-class CircuitBreakerOpen(Exception):
+class CircuitBreakerOpenError(Exception):
     """Raised when a call is attempted on an OPEN circuit."""
 
 
@@ -58,14 +58,14 @@ class CircuitBreaker:
     async def call(self, coro):
         """Execute `coro` through the circuit breaker.
 
-        Raises CircuitBreakerOpen if the circuit is OPEN.
+        Raises CircuitBreakerOpenError if the circuit is OPEN.
         Records success/failure and drives state transitions.
         """
         state = self._effective_state()
 
         if state == CircuitState.OPEN:
             logger.warning("circuit_breaker.rejected", name=self.name, state=state)
-            raise CircuitBreakerOpen(
+            raise CircuitBreakerOpenError(
                 f"Circuit '{self.name}' is OPEN — upstream is unavailable"
             )
 

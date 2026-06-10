@@ -5,18 +5,19 @@ Enforces zero-trust health checks on the client's connection before authenticati
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import UTC, datetime
 
+import redis.asyncio as aioredis
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.auth.sessions import get_redis
-import json
-from datetime import UTC, datetime
 
-import redis.asyncio as aioredis
+logger = structlog.get_logger()
 
 # In-memory posture state (synced from Redis)
 _BLOCKED_IPS: set[str] = set()
@@ -29,10 +30,10 @@ async def sync_posture_rules(redis_client: aioredis.Redis) -> None:
         data = await redis_client.get("posture:rules")
         if data:
             rules = json.loads(data)
-            
+
             # IPs
             _BLOCKED_IPS = set(rules.get("ip_address", []))
-            
+
             # User Agents
             new_ua_patterns = []
             for ua in rules.get("user_agent", []):
@@ -41,7 +42,7 @@ async def sync_posture_rules(redis_client: aioredis.Redis) -> None:
                 except re.error as e:
                     logger.warning("posture.invalid_ua_regex", pattern=ua, error=str(e))
             _BLOCKED_USER_AGENT_PATTERNS = new_ua_patterns
-            
+
             logger.debug(
                 "posture.rules_synced",
                 ips=len(_BLOCKED_IPS),
@@ -53,13 +54,13 @@ async def sync_posture_rules(redis_client: aioredis.Redis) -> None:
 
 class DevicePostureMiddleware(BaseHTTPMiddleware):
     """Enforces dynamic device posture requirements from Redis.
-    
+
     Checks User-Agent and IP Address against central policies. Logs failures to the audit trail.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
-        
+
         # Skip health/metrics
         if path in {"/proxy/health", "/health", "/metrics"}:
             return await call_next(request)
@@ -76,17 +77,19 @@ class DevicePostureMiddleware(BaseHTTPMiddleware):
 
         # 2. Check User-Agent
         user_agent = request.headers.get("User-Agent", "")
-        
+
         for pattern in _BLOCKED_USER_AGENT_PATTERNS:
             if pattern.search(user_agent):
-                return await self._reject(request, client_ip, f"Blocked User-Agent matches: {pattern.pattern}")
+                return await self._reject(
+                    request, client_ip, f"Blocked User-Agent matches: {pattern.pattern}"
+                )
 
         return await call_next(request)
 
     async def _reject(self, request: Request, client_ip: str, reason: str) -> Response:
         """Reject the request and log an audit event."""
         correlation_id = getattr(request.state, "correlation_id", "unknown")
-        
+
         logger.warning(
             "posture.rejected",
             client_ip=client_ip,

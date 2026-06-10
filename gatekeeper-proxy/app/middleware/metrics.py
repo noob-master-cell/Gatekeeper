@@ -11,8 +11,8 @@ Note: This middleware is for Redis-based dashboard metrics.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Callable
 
 import structlog
 from fastapi import Request, Response

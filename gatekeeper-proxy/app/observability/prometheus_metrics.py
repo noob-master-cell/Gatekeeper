@@ -14,17 +14,16 @@ Exposes:
 
 from __future__ import annotations
 
+import contextlib
 import time
-from typing import Callable
 
 from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     Histogram,
     generate_latest,
-    CONTENT_TYPE_LATEST,
-    CollectorRegistry,
-    REGISTRY,
 )
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -161,12 +160,10 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         # Track request body size
         content_length = request.headers.get("content-length")
         if content_length:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 REQUEST_SIZE.labels(method=method, path_template=path_template).observe(
                     int(content_length)
                 )
-            except (ValueError, TypeError):
-                pass
 
         ACTIVE_CONNECTIONS.inc()
         start = time.monotonic()
@@ -198,12 +195,10 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
             # Track response size
             resp_size = response.headers.get("content-length") if response is not None else None
             if resp_size:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     RESPONSE_SIZE.labels(
                         method=method, path_template=path_template
                     ).observe(int(resp_size))
-                except (ValueError, TypeError):
-                    pass
 
         return response
 

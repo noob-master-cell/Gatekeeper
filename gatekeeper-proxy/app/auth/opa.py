@@ -33,10 +33,8 @@ OPA expected output:
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 import structlog
