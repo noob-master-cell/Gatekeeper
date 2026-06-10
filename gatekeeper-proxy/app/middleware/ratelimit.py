@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 # ─── Lua script caching ──────────────────────────────────────
 
 _LUA_SCRIPT: str | None = None  # raw Lua source
-_LUA_SHA: str | None = None     # SHA after SCRIPT LOAD
+_LUA_SHA: str | None = None  # SHA after SCRIPT LOAD
 
 
 def _lua_source() -> str:
@@ -50,9 +50,9 @@ async def _get_sha(r) -> str:
 
 RATE_LIMITS: list[tuple[list[str], int, int]] = [
     # (path_prefixes, max_requests, window_seconds)
-    (["/login", "/oauth/", "/auth/dev-login"], 10, 60),      # Auth: 10 req/min
-    (["/admin/sessions/revoke", "/auth/logout"], 20, 60),     # Destructive: 20 req/min
-    (["/admin/"], 60, 60),                                    # Admin API: 60 req/min
+    (["/login", "/oauth/", "/auth/dev-login"], 10, 60),  # Auth: 10 req/min
+    (["/admin/sessions/revoke", "/auth/logout"], 20, 60),  # Destructive: 20 req/min
+    (["/admin/"], 60, 60),  # Admin API: 60 req/min
 ]
 
 # Default rate limit for all other endpoints
@@ -104,9 +104,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if api_key_header:
             # Per-API-key rate limiting
-            rate_key, max_requests, window = await self._get_apikey_rate_limit(
-                api_key_header, path
-            )
+            rate_key, max_requests, window = await self._get_apikey_rate_limit(api_key_header, path)
         else:
             # Per-IP rate limiting
             tier = _get_tier_name(path)
@@ -115,9 +113,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Check rate limit using Redis
         try:
-            allowed, current, ttl = await self._check_rate_limit(
-                rate_key, max_requests, window
-            )
+            allowed, current, ttl = await self._check_rate_limit(rate_key, max_requests, window)
         except Exception:
             # If Redis is down, fail open (allow the request)
             return await call_next(request)
@@ -135,6 +131,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Track metrics
             try:
                 from app.observability.prometheus_metrics import RATE_LIMIT_HITS
+
                 tier = _get_tier_name(path)
                 RATE_LIMIT_HITS.labels(client_ip=client_ip, tier=tier).inc()
             except Exception:
@@ -174,9 +171,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return client_ip
 
     @staticmethod
-    async def _get_apikey_rate_limit(
-        raw_key: str, path: str
-    ) -> tuple[str, int, int]:
+    async def _get_apikey_rate_limit(raw_key: str, path: str) -> tuple[str, int, int]:
         """Get rate limit config for an API key request."""
         import hashlib
 
@@ -204,9 +199,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return rate_key, max_req, window
 
     @staticmethod
-    async def _check_rate_limit(
-        key: str, max_requests: int, window: int
-    ) -> tuple[bool, int, int]:
+    async def _check_rate_limit(key: str, max_requests: int, window: int) -> tuple[bool, int, int]:
         """Atomic token bucket check via Redis Lua EVALSHA.
 
         capacity    = max_requests
@@ -216,28 +209,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """
         global _LUA_SHA  # noqa: PLW0603
         r = get_redis()
-        capacity    = max_requests
-        refill_rate = max_requests / window          # tokens per second
-        now_ms      = int(time.time() * 1000)
+        capacity = max_requests
+        refill_rate = max_requests / window  # tokens per second
+        now_ms = int(time.time() * 1000)
 
         sha = await _get_sha(r)
         try:
             result = await r.evalsha(
-                sha, 1, key,
-                str(capacity), str(refill_rate), str(now_ms), "1",
+                sha,
+                1,
+                key,
+                str(capacity),
+                str(refill_rate),
+                str(now_ms),
+                "1",
             )
         except Exception:
             # Script not cached (Redis restart) — reload and retry once
             _LUA_SHA = None  # reset cached SHA
             sha = await _get_sha(r)
             result = await r.evalsha(
-                sha, 1, key,
-                str(capacity), str(refill_rate), str(now_ms), "1",
+                sha,
+                1,
+                key,
+                str(capacity),
+                str(refill_rate),
+                str(now_ms),
+                "1",
             )
 
-        allowed      = int(result[0]) == 1
-        remaining    = int(result[1])
-        retry_ms     = int(result[2])
-        retry_s      = max(1, (retry_ms + 999) // 1000)  # ceil to seconds
+        allowed = int(result[0]) == 1
+        remaining = int(result[1])
+        retry_ms = int(result[2])
+        retry_s = max(1, (retry_ms + 999) // 1000)  # ceil to seconds
 
         return allowed, capacity - remaining, retry_s

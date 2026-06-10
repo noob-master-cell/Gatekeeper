@@ -34,7 +34,12 @@ user_roles = Table(
 policy_roles = Table(
     "policy_roles",
     Base.metadata,
-    Column("policy_id", Integer, ForeignKey("route_policies.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "policy_id",
+        Integer,
+        ForeignKey("route_policies.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
     Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
 )
 
@@ -57,7 +62,9 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    roles: Mapped[list[Role]] = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
+    roles: Mapped[list[Role]] = relationship(
+        "Role", secondary=user_roles, back_populates="users", lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"
@@ -79,8 +86,12 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
 
     # Relationships
-    users: Mapped[list[User]] = relationship("User", secondary=user_roles, back_populates="roles", lazy="selectin")
-    policies: Mapped[list["RoutePolicy"]] = relationship("RoutePolicy", secondary=policy_roles, back_populates="roles", lazy="selectin")
+    users: Mapped[list[User]] = relationship(
+        "User", secondary=user_roles, back_populates="roles", lazy="selectin"
+    )
+    policies: Mapped[list[RoutePolicy]] = relationship(
+        "RoutePolicy", secondary=policy_roles, back_populates="roles", lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<Role(id={self.id}, name='{self.name}')>"
@@ -106,7 +117,9 @@ class RoutePolicy(Base):
     )
 
     # Relationships
-    roles: Mapped[list[Role]] = relationship("Role", secondary=policy_roles, back_populates="policies", lazy="selectin")
+    roles: Mapped[list[Role]] = relationship(
+        "Role", secondary=policy_roles, back_populates="policies", lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<RoutePolicy(name='{self.name}', pattern='{self.pattern}')>"
@@ -121,9 +134,10 @@ class DevicePostureRule(Base):
     __tablename__ = "posture_rules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True) # "ip_address", "user_agent", "geo"
-    value: Mapped[str] = mapped_column(String(255), nullable=False) # e.g. "12.34.56.78", "MSIE"
-    action: Mapped[str] = mapped_column(String(20), default="block") # "block", "allow"
+    # Type discriminator: "ip_address", "user_agent", "geo"
+    rule_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(20), default="block")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -143,7 +157,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    stream_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    stream_id: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
@@ -180,4 +196,3 @@ class AuditLog(Base):
 # ─── Seed data ────────────────────────────────────────────────
 
 SEED_ROLES = ["admin", "hr", "user"]
-

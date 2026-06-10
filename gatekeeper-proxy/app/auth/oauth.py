@@ -187,8 +187,7 @@ async def oauth_callback(request: Request, code: str) -> Response:
         # Set cookie and redirect to dashboard
         response = RedirectResponse(url="/", status_code=302)
         is_secure = (
-            request.url.scheme == "https"
-            or request.headers.get("x-forwarded-proto") == "https"
+            request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         )
         response.set_cookie(
             key="gatekeeper_token",
@@ -410,10 +409,7 @@ async def demo_login(request: Request) -> Response:
         logger.warning("auth.demo_session_failed", error=str(exc))
 
     response = RedirectResponse(url="/", status_code=302)
-    is_secure = (
-        request.url.scheme == "https"
-        or request.headers.get("x-forwarded-proto") == "https"
-    )
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.set_cookie(
         key="gatekeeper_token",
         value=access_token,

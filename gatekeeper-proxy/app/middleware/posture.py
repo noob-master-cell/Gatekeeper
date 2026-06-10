@@ -23,6 +23,7 @@ logger = structlog.get_logger()
 _BLOCKED_IPS: set[str] = set()
 _BLOCKED_USER_AGENT_PATTERNS: list[re.Pattern] = []
 
+
 async def sync_posture_rules(redis_client: aioredis.Redis) -> None:
     """Fetch updated posture rules from Redis and compile them."""
     global _BLOCKED_IPS, _BLOCKED_USER_AGENT_PATTERNS
@@ -46,7 +47,7 @@ async def sync_posture_rules(redis_client: aioredis.Redis) -> None:
             logger.debug(
                 "posture.rules_synced",
                 ips=len(_BLOCKED_IPS),
-                user_agents=len(_BLOCKED_USER_AGENT_PATTERNS)
+                user_agents=len(_BLOCKED_USER_AGENT_PATTERNS),
             )
     except Exception as exc:
         logger.error("posture.sync_failed", error=str(exc))

@@ -72,7 +72,7 @@ def _cache_set(key: str, allowed: bool, reason: str) -> None:
         for k in expired:
             del _DECISION_CACHE[k]
         if len(_DECISION_CACHE) >= _CACHE_MAX_SIZE:
-            to_evict = list(_DECISION_CACHE.keys())[:_CACHE_MAX_SIZE // 4]
+            to_evict = list(_DECISION_CACHE.keys())[: _CACHE_MAX_SIZE // 4]
             for k in to_evict:
                 del _DECISION_CACHE[k]
     _DECISION_CACHE[key] = (allowed, reason, time.monotonic() + _CACHE_TTL)
@@ -187,7 +187,8 @@ async def evaluate_policy(
     if headers:
         # Only include safe headers (no auth tokens)
         safe_headers = {
-            k: v for k, v in headers.items()
+            k: v
+            for k, v in headers.items()
             if k.lower() not in ("authorization", "cookie", "x-api-key")
         }
         opa_input["input"]["headers"] = safe_headers
@@ -217,6 +218,7 @@ async def evaluate_policy(
         # Track metrics
         try:
             from app.observability.prometheus_metrics import POLICY_DECISIONS
+
             POLICY_DECISIONS.labels(
                 engine="opa",
                 decision="allow" if allowed else "deny",

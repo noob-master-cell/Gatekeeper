@@ -47,11 +47,13 @@ def init_tracing(service_name: str = "gatekeeper-proxy") -> None:
         from opentelemetry.trace.propagation import TraceContextTextMapPropagator
 
         # Resource identifies this service in traces
-        resource = Resource.create({
-            SERVICE_NAME: os.environ.get("OTEL_SERVICE_NAME", service_name),
-            "service.version": "0.1.0",
-            "deployment.environment": os.environ.get("GK_ENVIRONMENT", "development"),
-        })
+        resource = Resource.create(
+            {
+                SERVICE_NAME: os.environ.get("OTEL_SERVICE_NAME", service_name),
+                "service.version": "0.1.0",
+                "deployment.environment": os.environ.get("GK_ENVIRONMENT", "development"),
+            }
+        )
 
         # Create tracer provider
         provider = TracerProvider(resource=resource)
@@ -73,10 +75,12 @@ def init_tracing(service_name: str = "gatekeeper-proxy") -> None:
 
         # Set up W3C trace-context propagation (traceparent + tracestate headers)
         set_global_textmap(
-            CompositeTextMapPropagator([
-                TraceContextTextMapPropagator(),
-                W3CBaggagePropagator(),
-            ])
+            CompositeTextMapPropagator(
+                [
+                    TraceContextTextMapPropagator(),
+                    W3CBaggagePropagator(),
+                ]
+            )
         )
 
         _tracer = trace.get_tracer("gatekeeper-proxy", "0.1.0")

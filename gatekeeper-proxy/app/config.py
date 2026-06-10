@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     dev_mode: bool = False
 
     # CORS / CSRF allowed origins
-    cors_origins: str = "http://localhost:3000,http://localhost:8000,https://localhost:3000,https://localhost:8000"
+    cors_origins: str = (
+        "http://localhost:3000,http://localhost:8000,https://localhost:3000,https://localhost:8000"
+    )
 
     @property
     def parsed_cors_origins(self) -> list[str]:

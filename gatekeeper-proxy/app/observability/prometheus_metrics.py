@@ -33,13 +33,30 @@ from starlette.responses import Response
 
 # Standard latency buckets (in seconds): 5ms → 30s
 LATENCY_BUCKETS = (
-    0.005, 0.01, 0.025, 0.05, 0.075,
-    0.1, 0.25, 0.5, 0.75,
-    1.0, 2.5, 5.0, 7.5, 10.0, 30.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    2.5,
+    5.0,
+    7.5,
+    10.0,
+    30.0,
 )
 
 SIZE_BUCKETS = (
-    100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000,
+    100,
+    1_000,
+    10_000,
+    100_000,
+    1_000_000,
+    10_000_000,
 )
 
 REQUEST_COUNT = Counter(
@@ -138,10 +155,15 @@ def _determine_upstream(path: str) -> str:
 # ─── Middleware ───────────────────────────────────────────────
 
 # Paths to skip metrics entirely (self-referencing noise)
-_SKIP_PATHS = frozenset({
-    "/proxy/health", "/health", "/metrics",
-    "/.well-known/jwks.json", "/favicon.ico",
-})
+_SKIP_PATHS = frozenset(
+    {
+        "/proxy/health",
+        "/health",
+        "/metrics",
+        "/.well-known/jwks.json",
+        "/favicon.ico",
+    }
+)
 
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
@@ -196,9 +218,9 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
             resp_size = response.headers.get("content-length") if response is not None else None
             if resp_size:
                 with contextlib.suppress(ValueError, TypeError):
-                    RESPONSE_SIZE.labels(
-                        method=method, path_template=path_template
-                    ).observe(int(resp_size))
+                    RESPONSE_SIZE.labels(method=method, path_template=path_template).observe(
+                        int(resp_size)
+                    )
 
         return response
 

@@ -30,6 +30,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # HSTS — only set when not in dev mode (requires HTTPS)
         from app.config import settings
+
         if not settings.dev_mode:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 

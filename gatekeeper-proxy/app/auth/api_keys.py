@@ -128,6 +128,7 @@ async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
     # Track metrics
     try:
         from app.observability.prometheus_metrics import AUTH_EVENTS
+
         AUTH_EVENTS.labels(event_type="apikey_success").inc()
     except Exception:
         pass

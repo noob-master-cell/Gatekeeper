@@ -95,6 +95,7 @@ def _should_rotate() -> bool:
 
     try:
         from app.config import settings
+
         created_at = int(_CREATED_PATH.read_text().strip())
         rotation_seconds = settings.jwks_rotation_hours * 3600
         return (int(time.time()) - created_at) > rotation_seconds

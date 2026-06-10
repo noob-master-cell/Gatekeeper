@@ -94,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Close OPA client if initialized
     try:
         from app.auth.opa import close_opa_client
+
         await close_opa_client()
     except Exception:
         pass
@@ -361,6 +362,7 @@ async def simulate_policy(request: Request):
     method = data.get("method", "GET")
 
     from app.auth.rbac import check_route_access
+
     rbac_allowed, rbac_reason = check_route_access(path, roles, method)
 
     # Final decision starts with RBAC
@@ -380,6 +382,7 @@ async def simulate_policy(request: Request):
     if settings.opa_enabled:
         try:
             from app.auth.opa import evaluate_policy
+
             opa_allowed, opa_reason = await evaluate_policy(
                 method=method,
                 path=path,
@@ -411,9 +414,8 @@ async def simulate_policy(request: Request):
 async def circuit_breaker_status(request: Request) -> JSONResponse:
     """Return current state of all circuit breakers."""
     from app.circuit_breaker import backend_cb, control_plane_cb
-    return JSONResponse(content={
-        "data": [backend_cb.status(), control_plane_cb.status()]
-    })
+
+    return JSONResponse(content={"data": [backend_cb.status(), control_plane_cb.status()]})
 
 
 # ─── System status ──────────────────────────────────────────
@@ -431,14 +433,17 @@ async def admin_status(request: Request) -> JSONResponse:
         pass
 
     from app.circuit_breaker import backend_cb, control_plane_cb
-    return JSONResponse(content={
-        "opa_enabled": settings.opa_enabled,
-        "mtls_enabled": settings.mtls_enabled,
-        "redis_ok": redis_ok,
-        "dev_mode": settings.dev_mode,
-        "version": __version__,
-        "circuit_breakers": [backend_cb.status(), control_plane_cb.status()],
-    })
+
+    return JSONResponse(
+        content={
+            "opa_enabled": settings.opa_enabled,
+            "mtls_enabled": settings.mtls_enabled,
+            "redis_ok": redis_ok,
+            "dev_mode": settings.dev_mode,
+            "version": __version__,
+            "circuit_breakers": [backend_cb.status(), control_plane_cb.status()],
+        }
+    )
 
 
 # ─── Rate limit counters ─────────────────────────────────────
@@ -464,13 +469,15 @@ async def list_rate_limits(request: Request) -> JSONResponse:
             else:
                 tokens_remaining = 0
 
-            results.append({
-                "key": key_str,
-                "tier": tier,
-                "identifier": identifier,
-                "tokens_remaining": round(tokens_remaining, 2),
-                "ttl_seconds": ttl,
-            })
+            results.append(
+                {
+                    "key": key_str,
+                    "tier": tier,
+                    "identifier": identifier,
+                    "tokens_remaining": round(tokens_remaining, 2),
+                    "ttl_seconds": ttl,
+                }
+            )
         results.sort(key=lambda x: x["tokens_remaining"])
         return JSONResponse(content={"data": results, "count": len(results)})
     except RuntimeError:
@@ -507,12 +514,14 @@ async def event_stream(request: Request):
                 session_count = 0
                 rl_count = 0
 
-            payload = _json.dumps({
-                "timestamp": datetime.now(UTC).isoformat(),
-                "audit_log_entries": log_count,
-                "active_sessions": session_count,
-                "rate_limited_keys": rl_count,
-            })
+            payload = _json.dumps(
+                {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "audit_log_entries": log_count,
+                    "active_sessions": session_count,
+                    "rate_limited_keys": rl_count,
+                }
+            )
             yield f"data: {payload}\n\n"
             await asyncio.sleep(3)
 
@@ -536,6 +545,7 @@ async def get_opa_policy(request: Request) -> JSONResponse:
         return JSONResponse(status_code=503, content={"error": "OPA not enabled"})
     try:
         from app.auth.opa import get_policy
+
         policy = await get_policy()
         if policy is None:
             return JSONResponse(
@@ -557,6 +567,7 @@ async def push_opa_policy(request: Request) -> JSONResponse:
         if not rego.strip():
             return JSONResponse(status_code=400, content={"error": "Policy text is required"})
         from app.auth.opa import push_policy
+
         success, reason = await push_policy(rego)
         if success:
             return JSONResponse(content={"pushed": True, "reason": reason})
@@ -588,6 +599,7 @@ if os.path.exists(public_dir):
             return FileResponse(index_path)
         return JSONResponse(status_code=404, content={"error": "Not Found"})
 else:
+
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
     async def proxy_route_catchall(request: Request, path: str):
         return await forward_request(request)

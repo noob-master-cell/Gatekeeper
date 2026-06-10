@@ -171,12 +171,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """Authenticate a request using an API key."""
         # ── Bootstrap Control Plane API Key ───────────────────
         if settings.cp_api_key and raw_key == settings.cp_api_key:
-            claims = TokenClaims({
-                "sub": "apikey:control-plane",
-                "email": "control-plane@system.local",
-                "roles": ["admin"],
-                "jti": "apikey:cp-master",
-            })
+            claims = TokenClaims(
+                {
+                    "sub": "apikey:control-plane",
+                    "email": "control-plane@system.local",
+                    "roles": ["admin"],
+                    "jti": "apikey:cp-master",
+                }
+            )
 
             # Check RBAC
             path = request.url.path
@@ -209,12 +211,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
 
             # Create a synthetic claims object for API key auth
-            claims = TokenClaims({
-                "sub": f"apikey:{metadata.get('owner', 'unknown')}",
-                "email": metadata.get("owner", ""),
-                "roles": metadata.get("roles", ["user"]),
-                "jti": f"apikey:{metadata.get('key_prefix', '')}",
-            })
+            claims = TokenClaims(
+                {
+                    "sub": f"apikey:{metadata.get('owner', 'unknown')}",
+                    "email": metadata.get("owner", ""),
+                    "roles": metadata.get("roles", ["user"]),
+                    "jti": f"apikey:{metadata.get('key_prefix', '')}",
+                }
+            )
 
             # Check RBAC
             path = request.url.path
@@ -311,6 +315,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """Track auth events in Prometheus metrics."""
         try:
             from app.observability.prometheus_metrics import AUTH_EVENTS
+
             AUTH_EVENTS.labels(event_type=event_type).inc()
         except Exception:
             pass
@@ -320,6 +325,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """Track policy decisions in Prometheus metrics."""
         try:
             from app.observability.prometheus_metrics import POLICY_DECISIONS
+
             POLICY_DECISIONS.labels(engine=engine, decision=decision).inc()
         except Exception:
             pass

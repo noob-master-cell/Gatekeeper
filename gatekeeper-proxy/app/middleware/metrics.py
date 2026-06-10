@@ -26,8 +26,8 @@ logger = structlog.get_logger()
 _SKIP_PATHS = frozenset({"/proxy/health", "/metrics", "/.well-known/jwks.json"})
 
 # TTLs
-_HOURLY_TTL = 48 * 3600     # 48 hours
-_DAILY_TTL  = 7 * 24 * 3600 # 7 days
+_HOURLY_TTL = 48 * 3600  # 48 hours
+_DAILY_TTL = 7 * 24 * 3600  # 7 days
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -57,7 +57,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         now = datetime.now(UTC)
         hour_key = now.strftime("%Y-%m-%d-%H")
-        day_key  = now.strftime("%Y-%m-%d")
+        day_key = now.strftime("%Y-%m-%d")
 
         is_success = 200 <= status_code < 400
         bucket = "success" if is_success else "blocked"

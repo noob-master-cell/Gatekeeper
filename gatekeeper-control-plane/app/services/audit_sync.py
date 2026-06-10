@@ -84,16 +84,14 @@ async def sync_audit_logs(
             await asyncio.sleep(POLL_INTERVAL)
 
 
-async def _persist_entry(
-    session: AsyncSession, stream_id: str, fields: dict
-) -> None:
+async def _persist_entry(session: AsyncSession, stream_id: str, fields: dict) -> None:
     """Parse a single Redis stream entry and write an AuditLog row."""
     try:
         data = json.loads(fields.get("data", "{}"))
     except (json.JSONDecodeError, TypeError):
         data = {}
 
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     ts_raw = data.get("timestamp")
     ts = None
