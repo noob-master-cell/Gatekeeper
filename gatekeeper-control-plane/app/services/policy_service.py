@@ -105,13 +105,15 @@ async def ensure_default_policies(session: AsyncSession) -> None:
         )
 
         logger.info("seed.creating_admin_ui")
-        # 2. Admin UI requires admin
+        # 2. Admin UI is readable by any authenticated user (including the demo
+        # account); write-restrictions in the proxy + OPA enforce admin-only
+        # mutations on top of this rule.
         await create_or_update_policy(
             session=session,
             name="Admin UI",
             pattern=r"^/admin(/.*)?$",
             priority=20,
-            roles=["admin"],
+            allow_any_authenticated=True,
         )
 
         logger.info("seed.creating_catch_all")

@@ -233,8 +233,8 @@ export default function OverviewView() {
                     <CardDescription>Allowed vs blocked requests over time</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div className="w-full">
+                        <ResponsiveContainer width="100%" height={256} minWidth={0}>
                             <AreaChart data={trafficData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="gSuccess" x1="0" y1="0" x2="0" y2="1">
